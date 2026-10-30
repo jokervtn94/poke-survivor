@@ -1247,10 +1247,10 @@
     actionRow.append(copyButton, applyButton);
     ui.tmBuildResult.append(actionRow);
 
-    if (allTmMoves.length > picks.length) {
+    if (compatibleTmMoves.length > picks.length) {
       const remaining = document.createElement("p");
       remaining.className = "muted tm-help";
-      const hidden = allTmMoves.slice(picks.length);
+      const hidden = compatibleTmMoves.slice(picks.length);
       remaining.textContent = `TM còn lại trong bộ build: ${hidden.map((item) => `${item.name} ×${item.ownedCount}`).join(", ")}. Nút áp dụng sẽ dạy toàn bộ ${allTmMoves.length} TM nếu đủ.`;
       ui.tmBuildResult.append(remaining);
     }
