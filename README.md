@@ -10,12 +10,14 @@ Extension Chrome/Edge Manifest V3 phát triển lại từ nền ổn định v0
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
 5. Mở hoặc tải lại [pokesurvivor.com](https://pokesurvivor.com/).
 
+Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại tab game.
+
 ## Chức năng
 
 - **Xếp hạng thẻ lên cấp:** tính điểm cho move theo Pokémon, hệ, hướng build, skill mục tiêu, tiến hóa và các skill đã học.
 - **Tự chọn trong khoảng điểm gần nhau:** nếu hai lựa chọn dẫn đầu bằng điểm hoặc chênh không quá 6 điểm, extension chọn move sớm nhất trong thứ tự ưu tiên. Thứ tự này lấy từ move set Partner khi bật Auto build, sau đó đến các skill mục tiêu người chơi đã thêm. Nếu không có move ưu tiên trong nhóm điểm gần nhau, extension dùng thẻ được chấm hợp hướng build nhất.
 - **Tự chọn thẻ dẫn điểm:** nếu lựa chọn đầu hơn lựa chọn tiếp theo trên 6 điểm và đạt trên 6 điểm, extension tự chọn thẻ đó sau 750 ms để chờ game mở khóa.
-- **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ chưa nhận diện được xếp ở mức ưu tiên cuối theo hướng build và thứ tự xuất hiện.
+- **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ không nhận diện được nhận điểm dự phòng; nếu cả ba lựa chọn đều không có dữ liệu, thứ tự game là tiêu chí cuối.
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và gợi ý cặp Bond theo các move đã học.
