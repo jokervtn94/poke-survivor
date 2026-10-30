@@ -17,7 +17,7 @@
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
-  const EXTENSION_VERSION = "0.3.12";
+  const EXTENSION_VERSION = "0.3.13";
   const AUTO_PICK_DELAY_MS = 1250;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
@@ -959,11 +959,30 @@
     // Some game layouts report no client rects for the overlay even while its
     // children are visible, so isScreenVisible() is too strict for this screen.
     if (levelUpScreen?.isConnected && !levelUpScreen.classList.contains("hidden") && getComputedStyle(levelUpScreen).display !== "none") return true;
-    const choicesWithText = cardNodes().filter((card) => Boolean((card.innerText || card.textContent || "").trim()));
-    if (choicesWithText.filter(isElementRendered).length >= 2) return true;
+    // The visible reward prompt is a separate signal from the overlay's CSS
+    // state. Some game layouts keep the overlay class hidden while showing
+    // the prompt and its cards, so use rendered page text as another source.
+    if (hasVisibleLevelUpPromptText()) return true;
+    const choicesWithText = cardNodes().filter(isLevelUpChoiceVisible);
+    if (choicesWithText.length >= 2) return true;
     // The game updates lvl-num as it creates a new offer. Keep that signal
     // briefly so cards can still be read if the parent overlay is collapsed.
-    return Date.now() < levelUpSignalUntil && choicesWithText.length >= 2;
+    return Date.now() < levelUpSignalUntil && cardNodes().filter((card) => Boolean((card.textContent || "").trim())).length >= 2;
+  }
+
+  function hasVisibleLevelUpPromptText() {
+    const pageText = normalize(document.body?.innerText || "");
+    return /choose a reward|elige una recompensa|elige recompensa|choisis une recompense|choisissez une recompense|scegli una ricompensa|scegli una ricompensa|escolha uma recompensa/.test(pageText);
+  }
+
+  function isLevelUpChoiceVisible(card) {
+    if (!card?.isConnected || card.hidden || !(card.innerText || "").trim()) return false;
+    for (let ancestor = card; ancestor instanceof HTMLElement; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (ancestor.hidden || style.display === "none" || style.visibility === "hidden") return false;
+      if (ancestor === document.body) break;
+    }
+    return true;
   }
 
   function refreshLevelUpSignal() {
@@ -1770,8 +1789,13 @@
   }
 
   function rankCurrentCandidates() {
+    // Only inspect the live offer. Once its visible prompt is detected, read
+    // the canonical #cards entries directly; getBoundingClientRect() can be
+    // zero for cards the game still paints during its level-up transition.
+    const liveOffer = isLevelUpVisible || hasVisibleLevelUpPromptText();
+    if (!liveOffer) return [];
     return cardNodes()
-      .filter((card) => isElementRendered(card) && Boolean((card.innerText || card.textContent || "").trim()))
+      .filter((card) => Boolean((card.innerText || card.textContent || "").trim()))
       .map((card, choiceIndex) => ({ ...candidateFromCard(card), choiceIndex }))
       .filter((candidate) => candidate.text)
       .map(scoreCandidate)

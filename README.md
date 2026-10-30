@@ -1,4 +1,4 @@
-# PokéSurvivor Build Assistant 0.3.12
+# PokéSurvivor Build Assistant 0.3.13
 
 Extension Chrome/Edge Manifest V3 hỗ trợ theo dõi lượt chơi, đề xuất build skill, đọc Partner/TM và quản lý một số thao tác trong game **[pokesurvivor.com](https://pokesurvivor.com/)**. Tác giả: **Jokervtn94**.
 
@@ -45,6 +45,12 @@ Extension lưu tùy chọn build và dữ liệu tham khảo công khai trong `c
 ## Bản 0.3.10
 
 - Sửa nhận diện dự phòng bằng cách kiểm tra trực tiếp các thẻ skill đang hiển thị, không phụ thuộc kích thước khung cards; dùng đúng các thẻ đang render để xếp hạng và tự chọn.
+
+## Bản 0.3.13
+
+- Nhận diện thêm dòng chữ “Choose a reward” đang hiển thị, độc lập với trạng thái CSS của lớp phủ.
+- Đọc trực tiếp các mục trong `#cards` khi có offer lên cấp; không bỏ thẻ chỉ vì phép đo hình học trả về vùng 0×0 trong lúc chuyển cảnh.
+- Chỉ xếp hạng dữ liệu `#cards` khi đang có offer lên cấp.
 
 ## Bản 0.3.12
 
