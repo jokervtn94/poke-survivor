@@ -20,7 +20,6 @@
   const AUTO_PICK_DELAY_MS = 1250;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
-  const TM_COMPATIBILITY_REVIEW_DATE = "2026-10-22";
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const STRATEGIES = {
     balanced: "Cân bằng",
@@ -36,6 +35,8 @@
     strategy: "balanced",
     autoPick: true,
     autoClaimMissions: true,
+    autoGacha: false,
+    gachaModes: [],
     targets: [],
     learnedMoves: [],
     fusedGroups: [],
@@ -57,16 +58,12 @@
   let lastTrackedSelectionAt = 0;
   let missionCheckTimer = null;
   let missionClaimTimer = null;
+  let postRunAutomationActive = false;
+  let postRunAutomationPromise = null;
   const missionClaimAttempts = new Map();
-  let gameCoins = null;
-  let tmOffers = [];
-  let tmShopScannedAt = 0;
-  let tmScanTimer = null;
   let ownedTms = [];
   let tmBagScannedAt = 0;
   let tmBagScanTimer = null;
-  let tmCandidateMoveName = "";
-  let tmCandidatePokemonFilter = "";
   let tmCompatibilityByMove = null;
   let communityBuild = null;
   let communityBuildRequestId = 0;
@@ -92,25 +89,11 @@
         <div id="psba-types" class="types"><span class="muted">Chưa nhận diện hệ</span></div>
         <p id="psba-partner-details" class="muted partner-details">Đang chờ thông tin Partner từ game.</p>
 
-        <div class="section-title"><span>TM & PokéCoin</span><button id="psba-check-tms" class="text-button" type="button">Quét Shop</button></div>
-        <div class="coin-row"><span>PokéCoin hiện có</span><strong id="psba-coin-balance">—</strong></div>
-        <div class="tm-action-row"><button id="psba-scan-bag" class="quiet-button" type="button">Quét Túi TM</button><span id="psba-bag-status" class="muted">Chưa quét Túi.</span></div>
-        <div id="psba-tm-inventory" class="tm-inventory"><p class="muted">Mở Túi trong menu game để đọc TM đang có.</p></div>
-        <div class="tm-candidate-row">
-          <select id="psba-tm-candidate-move" aria-label="Chọn TM trong Túi"></select>
-          <input id="psba-tm-candidate-search" placeholder="Lọc Pokémon phù hợp" autocomplete="off">
-        </div>
-        <p id="psba-tm-candidate-status" class="muted auto-status">Quét Túi để tìm Pokémon tương thích với TM đang có.</p>
-        <div id="psba-tm-candidates" class="tm-candidates"></div>
-        <p id="psba-tm-status" class="muted auto-status">Mở Kecleon Shop từ menu chính để đọc 8 TM hôm nay.</p>
-        <div id="psba-tm-recommendations" class="recommendations"><p class="muted">Gợi ý mua và build TM theo Partner sẽ hiển thị sau khi quét Shop.</p></div>
-        <div class="section-title"><span>Đối chiếu build tham khảo</span><button id="psba-tm-use-partner" class="text-button" type="button">Dùng Partner</button></div>
-        <div class="tm-target-row">
-          <input id="psba-tm-target-pokemon" list="psba-pokemon-list" placeholder="Chọn Pokémon muốn build" autocomplete="off">
-          <button id="psba-tm-check-build" class="quiet-button" type="button">So sánh</button>
-        </div>
-        <p id="psba-tm-build-status" class="muted auto-status">Chọn Pokémon để tải build tham khảo cộng đồng.</p>
-        <div id="psba-tm-build-result" class="recommendations"><p class="muted">So sánh build với TM trong Túi và Shop sẽ hiện ở đây.</p></div>
+        <div class="section-title"><span>Build TM cho Partner</span><button id="psba-tm-refresh-build" class="text-button" type="button">Tải build</button></div>
+        <p id="psba-tm-status" class="muted auto-status">Đang chờ dữ liệu Partner.</p>
+        <p id="psba-bag-status" class="muted auto-status">Túi TM sẽ được đọc tự động khi mở Túi trong game.</p>
+        <div id="psba-tm-build-status" class="muted auto-status">Build tham khảo sẽ hiển thị ở đây.</div>
+        <div id="psba-tm-build-result" class="recommendations"><p class="muted">Chưa tải build TM cho Partner.</p></div>
         <div class="tm-source-links">
           <a href="https://pokesurvivors.org/builds/" target="_blank" rel="noopener noreferrer">Builds tham khảo · 966 Pokémon</a>
           <a href="https://pokemonsurvivorwiki.com/tm-compatibility/" target="_blank" rel="noopener noreferrer">Kiểm tra tương thích TM</a>
@@ -139,9 +122,19 @@
         <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ điểm cao nhất</span></label>
         <p id="psba-auto-status" class="muted auto-status">Tự chọn thẻ hạng 1; nếu hòa hoặc chưa chấm được thì theo thứ tự game.</p>
 
-        <div class="section-title"><span>Nhiệm vụ</span><button id="psba-check-missions" class="text-button" type="button">Kiểm tra</button></div>
-        <label class="auto-pick-row"><span><input id="psba-auto-claim-missions" type="checkbox"> Tự nhận thưởng nhiệm vụ hoàn thành</span></label>
-        <p id="psba-mission-status" class="muted auto-status">Mở Missions trong menu game để đồng bộ tiến độ.</p>
+        <div class="section-title"><span>Nhiệm vụ sau ván</span><button id="psba-check-missions" class="text-button" type="button">Mở Missions</button></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-claim-missions" type="checkbox"> Tự kiểm tra và nhận thưởng</span></label>
+        <p id="psba-mission-status" class="muted auto-status">Sau khi kết thúc ván, tự mở Missions, nhận phần thưởng sẵn có rồi về menu.</p>
+
+        <div class="section-title"><span>Gacha sau ván</span><small>bốn chế độ</small></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-gacha" type="checkbox"> Tự quay khi kết thúc ván</span></label>
+        <div class="gacha-mode-list">
+          <label class="gacha-mode"><span><input id="psba-pull-10" type="checkbox"> 10 lượt · vé thường</span></label>
+          <label class="gacha-mode"><span><input id="psba-pull-10b" type="checkbox"> 10 lượt · vé ×10</span></label>
+          <label class="gacha-mode"><span><input id="psba-pull-100" type="checkbox"> 100 lượt · vé thường</span></label>
+          <label class="gacha-mode"><span><input id="psba-pull-100b" type="checkbox"> 100 lượt · vé ×10</span></label>
+        </div>
+        <p id="psba-gacha-status" class="muted auto-status">Chỉ quay các chế độ đã chọn khi game bật nút do đủ vé.</p>
 
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
@@ -165,28 +158,20 @@
     pokemonList: shadow.querySelector("#psba-pokemon-list"),
     types: shadow.querySelector("#psba-types"),
     partnerDetails: shadow.querySelector("#psba-partner-details"),
-    coinBalance: shadow.querySelector("#psba-coin-balance"),
     tmStatus: shadow.querySelector("#psba-tm-status"),
-    tmRecommendations: shadow.querySelector("#psba-tm-recommendations"),
-    checkTms: shadow.querySelector("#psba-check-tms"),
-    scanBag: shadow.querySelector("#psba-scan-bag"),
     bagStatus: shadow.querySelector("#psba-bag-status"),
-    tmInventory: shadow.querySelector("#psba-tm-inventory"),
-    tmCandidateMove: shadow.querySelector("#psba-tm-candidate-move"),
-    tmCandidateSearch: shadow.querySelector("#psba-tm-candidate-search"),
-    tmCandidateStatus: shadow.querySelector("#psba-tm-candidate-status"),
-    tmCandidates: shadow.querySelector("#psba-tm-candidates"),
-    tmBuildPokemon: shadow.querySelector("#psba-tm-target-pokemon"),
-    checkTmBuild: shadow.querySelector("#psba-tm-check-build"),
-    useCurrentPartner: shadow.querySelector("#psba-tm-use-partner"),
     tmBuildStatus: shadow.querySelector("#psba-tm-build-status"),
     tmBuildResult: shadow.querySelector("#psba-tm-build-result"),
+    refreshTmBuild: shadow.querySelector("#psba-tm-refresh-build"),
     strategy: shadow.querySelector("#psba-strategy"),
     autoPick: shadow.querySelector("#psba-auto-pick"),
     autoStatus: shadow.querySelector("#psba-auto-status"),
     autoClaimMissions: shadow.querySelector("#psba-auto-claim-missions"),
     missionStatus: shadow.querySelector("#psba-mission-status"),
     checkMissions: shadow.querySelector("#psba-check-missions"),
+    autoGacha: shadow.querySelector("#psba-auto-gacha"),
+    gachaStatus: shadow.querySelector("#psba-gacha-status"),
+    gachaModes: Object.fromEntries(["pull-10", "pull-10b", "pull-100", "pull-100b"].map((id) => [id, shadow.querySelector(`#psba-${id}`)])),
     targetInput: shadow.querySelector("#psba-target-input"),
     knownMove: shadow.querySelector("#psba-known-move"),
     knownLevel: shadow.querySelector("#psba-known-level"),
@@ -214,7 +199,7 @@
     state.strategy = ui.strategy.value;
     persistState();
     refreshRecommendations();
-    renderTmRecommendations();
+    renderCommunityBuild();
   });
   ui.autoPick.addEventListener("change", () => {
     state.autoPick = ui.autoPick.checked;
@@ -226,42 +211,21 @@
     persistState();
     queueMissionCheck(0);
   });
-  ui.checkMissions.addEventListener("click", openMissionsFromGameMenu);
-  ui.checkTms.addEventListener("click", openTmShopFromGameMenu);
-  ui.scanBag.addEventListener("click", openBagFromGameMenu);
-  ui.tmCandidateMove.addEventListener("change", () => {
-    tmCandidateMoveName = ui.tmCandidateMove.value;
-    renderTmCandidates();
-  });
-  ui.tmCandidateSearch.addEventListener("input", () => {
-    tmCandidatePokemonFilter = ui.tmCandidateSearch.value;
-    renderTmCandidates();
-  });
-  ui.checkTmBuild.addEventListener("click", loadCommunityBuildForSelected);
-  ui.tmBuildPokemon.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      loadCommunityBuildForSelected();
-    }
-  });
-  ui.tmBuildPokemon.addEventListener("input", () => {
-    if (normalize(ui.tmBuildPokemon.value) !== normalize(state.tmBuildPokemon)) {
-      communityBuild = null;
-      ui.tmBuildStatus.textContent = "Nhấn So sánh để tải build cho Pokémon đã chọn.";
-      renderCommunityBuild();
-    }
-  });
-  ui.useCurrentPartner.addEventListener("click", () => {
-    const partner = currentPartnerForTms();
-    if (!partner) {
-      ui.tmBuildStatus.textContent = "Chưa nhận diện Partner trong menu game.";
-      return;
-    }
-    state.tmBuildPokemon = partner.name;
-    ui.tmBuildPokemon.value = partner.name;
+  ui.autoGacha.addEventListener("change", () => {
+    state.autoGacha = ui.autoGacha.checked;
     persistState();
-    loadCommunityBuildForSelected();
   });
+  for (const [mode, input] of Object.entries(ui.gachaModes)) {
+    input.addEventListener("change", () => {
+      const modes = new Set(state.gachaModes);
+      if (input.checked) modes.add(mode);
+      else modes.delete(mode);
+      state.gachaModes = [...modes];
+      persistState();
+    });
+  }
+  ui.checkMissions.addEventListener("click", openMissionsFromGameMenu);
+  ui.refreshTmBuild.addEventListener("click", loadCommunityBuildForSelected);
   shadow.querySelector("#psba-add-target").addEventListener("click", addTarget);
   shadow.querySelector("#psba-add-known").addEventListener("click", addKnownMove);
   ui.knownMove.addEventListener("keydown", (event) => {
@@ -279,13 +243,15 @@
   shadow.querySelector("#psba-reset").addEventListener("click", resetRun);
   ui.autoPick.checked = state.autoPick;
   ui.autoClaimMissions.checked = state.autoClaimMissions;
+  ui.autoGacha.checked = state.autoGacha;
+  for (const [mode, input] of Object.entries(ui.gachaModes)) input.checked = state.gachaModes.includes(mode);
 
   let gameRefreshTimer = null;
   let lastLevelUpPollFingerprint = "";
   let observedGameRoots = new Set();
-  const gameRootSelector = "#game, #cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-shop, #shop-body, #scr-bag, #bag-body, #coins, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
-  const gameMutationTargetSelector = "#cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-shop, #shop-body, #scr-bag, #bag-body, #coins, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
-  const observedGameRootSelectors = ["#cards", "#scr-levelup", "#scr-over", "#scr-goals", "#goals-body", "#scr-shop", "#shop-body", "#scr-bag", "#bag-body", "#coins", "#menu-partner-name", "#menu-partner-info", "#res-name", "#starter-info"];
+  const gameRootSelector = "#game, #cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-bag, #bag-body, #scr-gacha, #pull-fx, #gacha-tickets, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
+  const gameMutationTargetSelector = "#cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-bag, #bag-body, #scr-gacha, #pull-fx, #gacha-tickets, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
+  const observedGameRootSelectors = ["#cards", "#scr-levelup", "#scr-over", "#scr-goals", "#goals-body", "#scr-bag", "#bag-body", "#scr-gacha", "#pull-fx", "#gacha-tickets", "#menu-partner-name", "#menu-partner-info", "#res-name", "#starter-info"];
   document.addEventListener("click", onGameCardClick, true);
   document.addEventListener("keydown", onGameLevelUpKeydown, true);
   const observer = new MutationObserver((records) => {
@@ -336,18 +302,15 @@
   function refreshGameState() {
     observePartnerName();
     updatePartnerDetails();
-    updateCoinBalance();
     updateLevelUpState();
     updateGameOverState();
     queueMissionCheck();
-    queueTmScan();
     queueBagScan();
   }
 
   const refreshAfterResume = () => {
     refreshObservedGameRoots(observer);
     refreshGameState();
-    queueTmScan(250);
     queueBagScan(250);
     queueMissionCheck(250);
   };
@@ -372,11 +335,9 @@
   loadReferenceData();
   observePartnerName();
   updatePartnerDetails();
-  updateCoinBalance();
   updateLevelUpState();
   updateGameOverState();
   queueMissionCheck();
-  queueTmScan();
   queueBagScan();
 
   function normalize(value) {
@@ -398,6 +359,8 @@
       strategy: state.strategy,
       autoPick: state.autoPick,
       autoClaimMissions: state.autoClaimMissions,
+      autoGacha: state.autoGacha,
+      gachaModes: [...state.gachaModes],
       targets: [...state.targets],
       learnedMoves: state.learnedMoves.map((move) => ({ ...move })),
       fusedGroups: state.fusedGroups.map((group) => [...group]),
@@ -417,6 +380,8 @@
         state.strategy = Object.prototype.hasOwnProperty.call(STRATEGIES, value.strategy) ? value.strategy : "balanced";
         state.autoPick = value.autoPick === undefined ? true : Boolean(value.autoPick);
         state.autoClaimMissions = value.autoClaimMissions === undefined ? true : Boolean(value.autoClaimMissions);
+        state.autoGacha = Boolean(value.autoGacha);
+        state.gachaModes = Array.isArray(value.gachaModes) ? value.gachaModes.filter((mode) => ["pull-10", "pull-10b", "pull-100", "pull-100b"].includes(mode)) : [];
         state.targets = Array.isArray(value.targets) ? value.targets.filter((item) => typeof item === "string") : [];
         state.learnedMoves = Array.isArray(value.learnedMoves) ? value.learnedMoves.filter((item) => item && typeof item.name === "string").slice(0, MAX_MOVES_WITH_BONDS) : [];
         state.fusedGroups = Array.isArray(value.fusedGroups)
@@ -447,18 +412,16 @@
       moveData = parsed.moves;
       populateLists();
       loadTmCompatibilityData();
-      if (!state.tmBuildPokemon) {
-        state.tmBuildPokemon = currentPartnerForTms()?.name || state.pokemon;
+      const livePartner = currentPartnerForTms();
+      if (livePartner) {
+        state.tmBuildPokemon = livePartner.name;
         persistState();
       }
       syncUiFromState();
       observePartnerName();
       updatePartnerDetails();
-      updateCoinBalance();
       ui.status.textContent = `Đã nạp ${pokemonData.length} Pokémon và ${moveData.length} move từ trang chính thức.`;
       refreshRecommendations();
-      if (isScreenVisible(document.querySelector("#scr-shop"))) scanTmShop();
-      else renderTmRecommendations();
       if (state.tmBuildPokemon) loadCommunityBuildForSelected();
     } catch (_error) {
       ui.status.textContent = "Không tải được dữ liệu tham khảo. Có thể nhập Pokémon và vẫn xem được gợi ý cơ bản.";
@@ -516,7 +479,6 @@
     } catch (_error) {
       tmCompatibilityByMove = null;
     }
-    renderTmCandidates();
     renderCommunityBuild();
   }
 
@@ -554,15 +516,14 @@
     ui.strategy.value = state.strategy;
     ui.autoPick.checked = state.autoPick;
     ui.autoClaimMissions.checked = state.autoClaimMissions;
+    ui.autoGacha.checked = state.autoGacha;
+    for (const [mode, input] of Object.entries(ui.gachaModes)) input.checked = state.gachaModes.includes(mode);
     if (!state.tmBuildPokemon) state.tmBuildPokemon = currentPartnerForTms()?.name || state.pokemon;
-    ui.tmBuildPokemon.value = state.tmBuildPokemon;
     renderTypes();
     updatePartnerDetails();
     renderTargets();
     renderBuild();
-    renderTmInventory();
     renderCommunityBuild();
-    renderTmRecommendations();
   }
 
   function currentPokemon() {
@@ -588,26 +549,17 @@
     ui.partnerDetails.textContent = `Partner: ${partner.name} #${String(partner.id).padStart(3, "0")} · ${info}`;
   }
 
-  function updateCoinBalance() {
-    const coinNode = document.querySelector("#coins");
-    const raw = coinNode?.parentElement?.title?.trim() || coinNode?.title?.trim() || coinNode?.textContent?.trim() || "";
-    const digits = raw.replace(/[^\d]/g, "");
-    gameCoins = digits ? Number(digits) : null;
-    ui.coinBalance.textContent = gameCoins === null ? "Chưa đọc" : `${gameCoins.toLocaleString()} PC`;
-    if (tmOffers.length) renderTmRecommendations();
-    renderCommunityBuild();
-  }
-
   function onPokemonInput() {
     const nextPokemon = ui.pokemon.value.trim();
     if (state.pokemon && normalize(state.pokemon) !== normalize(nextPokemon)) clearRunTracker();
     state.pokemon = nextPokemon;
     state.manualPokemon = true;
+    state.tmBuildPokemon = currentPartnerForTms()?.name || nextPokemon;
     persistState();
     renderTypes();
     refreshRecommendations();
     updatePartnerDetails();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function observePartnerName() {
@@ -627,8 +579,13 @@
         syncUiFromState();
         refreshRecommendations();
       }
+      if (normalize(state.tmBuildPokemon) !== normalize(match.name)) {
+        state.tmBuildPokemon = match.name;
+        persistState();
+        if (pokemonData.length) loadCommunityBuildForSelected();
+      }
       updatePartnerDetails();
-      renderTmRecommendations();
+      renderCommunityBuild();
       return;
     }
   }
@@ -656,7 +613,7 @@
       syncUiFromState();
       refreshRecommendations();
       updatePartnerDetails();
-      renderTmRecommendations();
+      renderCommunityBuild();
       return;
     }
     ui.status.textContent = "Chưa đọc được tên Pokémon trong menu game. Hãy chọn hoặc nhập tên ở ô trên.";
@@ -690,7 +647,7 @@
     persistState();
     renderTargets();
     refreshRecommendations();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function addKnownMove() {
@@ -713,7 +670,7 @@
     persistState();
     renderBuild();
     refreshRecommendations();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function renderTargets() {
@@ -735,7 +692,7 @@
         persistState();
         renderTargets();
         refreshRecommendations();
-        renderTmRecommendations();
+        renderCommunityBuild();
       });
       ui.targets.append(chip);
     }
@@ -745,7 +702,7 @@
     clearRunTracker();
     persistState();
     refreshRecommendations();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function clearRunTracker() {
@@ -760,7 +717,7 @@
     state.statPicks = [];
     state.lastLevel = 0;
     renderBuild();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function updateLevelUpState() {
@@ -800,9 +757,182 @@
       persistState();
       ui.status.textContent = "Pokémon đã bị hạ — build của lượt này đã được reset.";
       setPanelOpen(false);
+      const shouldRunMissions = state.autoClaimMissions;
+      const shouldRunGacha = state.autoGacha && state.gachaModes.length > 0;
+      if (shouldRunMissions || shouldRunGacha) beginPostRunAutomation();
     } else if (!visible) {
       wasGameOver = false;
     }
+  }
+
+  async function beginPostRunAutomation() {
+    if (postRunAutomationActive) return postRunAutomationPromise;
+    postRunAutomationActive = true;
+    postRunAutomationPromise = (async () => {
+      try {
+        const menu = document.querySelector("#scr-menu");
+        const over = document.querySelector("#scr-over");
+        if (isScreenVisible(over)) {
+          const returnButton = document.querySelector("#btn-again");
+          if (!returnButton || returnButton.disabled) throw new Error("Không tìm thấy nút về menu sau trận.");
+          returnButton.click();
+          await waitFor(() => isScreenVisible(menu) && !isScreenVisible(over), 12000);
+        } else {
+          await waitFor(() => isScreenVisible(menu), 8000);
+        }
+
+        if (state.autoClaimMissions) {
+          try {
+            await runPostRunMissions();
+          } catch (error) {
+            ui.missionStatus.textContent = `Không thể tự nhận Missions: ${error?.message || "giao diện game không phản hồi"}`;
+            await returnToMainMenu();
+          }
+        }
+        if (state.autoGacha && state.gachaModes.length) {
+          try {
+            await runPostRunGacha();
+          } catch (error) {
+            ui.gachaStatus.textContent = `Không thể tự quay Gacha: ${error?.message || "giao diện game không phản hồi"}`;
+            await returnToMainMenu();
+          }
+        }
+        await returnToMainMenu();
+        ui.status.textContent = "Tự xử lý sau trận đã xong; đang ở menu chính.";
+      } catch (error) {
+        ui.status.textContent = `Tự xử lý sau trận bị dừng: ${error?.message || "giao diện game không phản hồi"}`;
+        await returnToMainMenu();
+      } finally {
+        postRunAutomationActive = false;
+        postRunAutomationPromise = null;
+      }
+    })();
+    return postRunAutomationPromise;
+  }
+
+  async function runPostRunMissions() {
+    const menu = document.querySelector("#scr-menu");
+    const goals = document.querySelector("#scr-goals");
+    const button = menu?.querySelector('[data-go="goals"]');
+    if (!isScreenVisible(goals)) {
+      if (!isScreenVisible(menu) || !button || button.disabled) {
+        ui.missionStatus.textContent = "Không mở được Missions từ menu sau trận.";
+        return;
+      }
+      button.click();
+      await waitFor(() => isScreenVisible(goals), 8000);
+    }
+    selectMissionsTab();
+    await waitFor(() => {
+      const body = document.querySelector("#goals-body");
+      return body && body.querySelectorAll(".mission").length > 0;
+    }, 10000);
+
+    if (missionClaimTimer) clearTimeout(missionClaimTimer);
+    missionClaimTimer = null;
+    if (missionCheckTimer) clearTimeout(missionCheckTimer);
+    missionCheckTimer = null;
+
+    let stableEmptyChecks = 0;
+    for (let check = 0; check < 80 && state.autoClaimMissions; check += 1) {
+      const body = document.querySelector("#goals-body");
+      const cards = Array.from(body?.querySelectorAll(".mission") || []);
+      const ready = cards.filter((card) => card.classList.contains("ready") && !card.classList.contains("claimed"));
+      const claimable = ready
+        .map((card) => ({ card, button: card.querySelector("button:not([disabled])") }))
+        .find((item) => item.button);
+
+      if (claimable) {
+        stableEmptyChecks = 0;
+        ui.missionStatus.textContent = `Đang nhận thưởng Mission (${ready.length} phần thưởng sẵn sàng)…`;
+        claimable.button.click();
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        continue;
+      }
+
+      stableEmptyChecks += 1;
+      ui.missionStatus.textContent = ready.length
+        ? `${ready.length} Mission đang sẵn sàng nhưng game chưa bật nút nhận.`
+        : "Đã kiểm tra Missions; không còn phần thưởng cần nhận.";
+      if (stableEmptyChecks >= 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+    if (!state.autoClaimMissions) {
+      ui.missionStatus.textContent = "Đã tắt tự nhận Mission; dừng thao tác sau trận.";
+    }
+    const back = document.querySelector("#scr-goals [data-back]");
+    if (back && !back.disabled) back.click();
+    await waitFor(() => isScreenVisible(document.querySelector("#scr-menu")), 8000);
+  }
+
+  async function runPostRunGacha() {
+    const selectedModes = ["pull-100", "pull-10", "pull-100b", "pull-10b"]
+      .filter((mode) => state.gachaModes.includes(mode));
+    const menu = document.querySelector("#scr-menu");
+    const gacha = document.querySelector("#scr-gacha");
+    const button = menu?.querySelector('[data-go="gacha"]');
+    if (!isScreenVisible(gacha)) {
+      if (!isScreenVisible(menu) || !button || button.disabled) {
+        ui.gachaStatus.textContent = "Không mở được Gacha từ menu sau trận.";
+        return;
+      }
+      button.click();
+      await waitFor(() => isScreenVisible(gacha), 8000);
+    }
+
+    let totalBatches = 0;
+    let stoppedAtLimit = false;
+    let disabledModes = 0;
+    const maxBatchesPerMode = 200;
+    for (const mode of selectedModes) {
+      let batchesForMode = 0;
+      while (state.autoGacha && state.gachaModes.includes(mode) && batchesForMode < maxBatchesPerMode) {
+        const pullButton = document.querySelector(`#${mode}`);
+        if (!pullButton || pullButton.disabled || pullButton.getAttribute("aria-disabled") === "true") {
+          disabledModes += 1;
+          break;
+        }
+        pullButton.click();
+        batchesForMode += 1;
+        totalBatches += 1;
+        ui.gachaStatus.textContent = `Đang tự quay ${mode.replace("pull-", "")} · lượt batch ${batchesForMode}…`;
+
+        await waitFor(() => isScreenVisible(document.querySelector("#pull-fx")), 8000);
+        await waitFor(() => {
+          const skip = document.querySelector("#pull-skip");
+          if (skip && isScreenVisible(skip) && !skip.disabled) skip.click();
+          const close = document.querySelector("#pull-close");
+          return close && isScreenVisible(close) && !close.disabled;
+        }, 45000, 150);
+        document.querySelector("#pull-close")?.click();
+        await waitFor(() => !isScreenVisible(document.querySelector("#pull-fx")), 10000);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      if (batchesForMode >= maxBatchesPerMode) {
+        stoppedAtLimit = true;
+        break;
+      }
+    }
+    ui.gachaStatus.textContent = !state.autoGacha
+      ? "Đã tắt Auto Gacha; quay về menu."
+      : stoppedAtLimit
+        ? `Đã quay ${totalBatches} batch; dừng ở giới hạn an toàn ${maxBatchesPerMode} batch cho một chế độ.`
+        : totalBatches
+          ? `Đã quay ${totalBatches} batch; ${disabledModes} chế độ đã hết hoặc không đủ vé.`
+          : "Không có chế độ đã chọn nào đủ vé để quay.";
+    const back = document.querySelector("#scr-gacha [data-back]");
+    if (back && !back.disabled) back.click();
+    await waitFor(() => isScreenVisible(document.querySelector("#scr-menu")), 8000);
+  }
+
+  async function returnToMainMenu() {
+    if (isScreenVisible(document.querySelector("#scr-menu"))) return;
+    const visibleBack = Array.from(document.querySelectorAll("[data-back]"))
+      .find((button) => isScreenVisible(button) && !button.disabled);
+    if (visibleBack) visibleBack.click();
+    try {
+      await waitFor(() => isScreenVisible(document.querySelector("#scr-menu")), 6000);
+    } catch (_error) {}
   }
 
   function isScreenVisible(screen) {
@@ -831,40 +961,6 @@
     }
 
     ui.missionStatus.textContent = "Mở Missions từ menu game sau lượt để xem tiến độ và tự nhận thưởng.";
-  }
-
-  function openTmShopFromGameMenu() {
-    const shopScreen = document.querySelector("#scr-shop");
-    if (isScreenVisible(shopScreen)) {
-      scanTmShop();
-      return;
-    }
-    const menuScreen = document.querySelector("#scr-menu");
-    const shopButton = menuScreen?.querySelector('[data-go="shop"]');
-    if (isScreenVisible(menuScreen) && shopButton && !shopButton.disabled) {
-      shopButton.click();
-      ui.tmStatus.textContent = "Đã mở Kecleon Shop; đang đọc TM và giá…";
-      queueTmScan(180);
-      return;
-    }
-    ui.tmStatus.textContent = "Mở Kecleon Shop từ menu game sau lượt để quét TM hôm nay.";
-  }
-
-  function openBagFromGameMenu() {
-    const bagScreen = document.querySelector("#scr-bag");
-    if (isScreenVisible(bagScreen)) {
-      scanBagTms();
-      return;
-    }
-    const menuScreen = document.querySelector("#scr-menu");
-    const bagButton = menuScreen?.querySelector('[data-go="bag"]');
-    if (isScreenVisible(menuScreen) && bagButton && !bagButton.disabled) {
-      bagButton.click();
-      ui.bagStatus.textContent = "Đã mở Túi; đang đọc các TM…";
-      queueBagScan(180);
-      return;
-    }
-    ui.bagStatus.textContent = "Mở Túi từ menu game sau lượt để quét TM.";
   }
 
   function queueBagScan(delay = 160) {
@@ -901,146 +997,12 @@
       });
     }
 
-    const bagText = normalize(bagBody.innerText || "");
-    const emptyBag = /empty|vacia|vazio|tui cua ban trong/.test(bagText);
-    if (!found.length && !cards.length && !emptyBag) {
-      ui.bagStatus.textContent = "Đã mở Túi nhưng chưa nhận diện được dòng TM; chưa thay đổi số liệu đã quét.";
-      return;
-    }
-
     ownedTms = found;
     tmBagScannedAt = Date.now();
     ui.bagStatus.textContent = found.length
-      ? "Đã quét " + found.length + " loại TM · " + found.reduce((sum, item) => sum + item.count, 0) + " bản."
-      : "Đã quét Túi · chưa có TM chưa dùng.";
-    renderTmInventory();
-    renderTmRecommendations();
+      ? "Túi đã cập nhật · " + found.reduce((sum, item) => sum + item.count, 0) + " TM chưa dùng."
+      : "Túi đã cập nhật · không có TM chưa dùng.";
     renderCommunityBuild();
-  }
-
-  function renderTmInventory() {
-    ui.tmInventory.replaceChildren();
-    if (!tmBagScannedAt) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "Mở Túi trong menu game để đọc TM đang có.";
-      ui.tmInventory.append(empty);
-      renderTmCandidates();
-      return;
-    }
-    if (!ownedTms.length) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "Không có TM chưa dùng trong Túi.";
-      ui.tmInventory.append(empty);
-      renderTmCandidates();
-      return;
-    }
-    for (const item of ownedTms) {
-      const row = document.createElement("div");
-      row.className = "tm-inventory-item";
-      const name = document.createElement("strong");
-      name.textContent = "TM " + item.name;
-      const count = document.createElement("span");
-      count.textContent = "×" + item.count;
-      row.append(name, count);
-      ui.tmInventory.append(row);
-    }
-    renderTmCandidates();
-  }
-
-  function renderTmCandidates() {
-    const options = [];
-    const seen = new Set();
-    for (const item of ownedTms) {
-      if (!item.move || seen.has(normalize(item.name))) continue;
-      seen.add(normalize(item.name));
-      options.push(item);
-    }
-
-    const previous = tmCandidateMoveName;
-    ui.tmCandidateMove.replaceChildren();
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = options.length ? "Chọn TM trong Túi" : "Chưa có TM";
-    ui.tmCandidateMove.append(placeholder);
-    for (const item of options) {
-      const option = document.createElement("option");
-      option.value = item.name;
-      option.textContent = item.name + " ×" + item.count;
-      ui.tmCandidateMove.append(option);
-    }
-
-    tmCandidateMoveName = options.some((item) => normalize(item.name) === normalize(previous))
-      ? options.find((item) => normalize(item.name) === normalize(previous)).name
-      : options[0]?.name || "";
-    ui.tmCandidateMove.value = tmCandidateMoveName;
-    if (ui.tmCandidateSearch.value !== tmCandidatePokemonFilter) {
-      ui.tmCandidateSearch.value = tmCandidatePokemonFilter;
-    }
-    ui.tmCandidates.replaceChildren();
-
-    const selected = options.find((item) => normalize(item.name) === normalize(tmCandidateMoveName));
-    if (!selected) {
-      ui.tmCandidateStatus.textContent = tmBagScannedAt
-        ? "Túi chưa có TM đã nhận diện; nhập English names nếu tên game đang dịch."
-        : "Quét Túi để xem Pokémon có move này trong pool tự nhiên.";
-      return;
-    }
-
-    const moveType = normalize(selected.move.type);
-    const candidates = pokemonData.map((pokemon) => {
-      const natural = moveType === "normal" || pokemon.types.some((type) => normalize(type) === moveType);
-      const compatible = tmCompatibilityFor(pokemon, selected.move);
-      return { pokemon, natural, compatible };
-    }).filter((item) => item.natural || item.compatible === true);
-    const filter = normalize(tmCandidatePokemonFilter);
-    const filtered = filter
-      ? candidates.filter(({ pokemon }) => normalize(pokemon.name).includes(filter))
-      : candidates;
-    const naturalCount = candidates.filter((item) => item.natural).length;
-    const compatibleCount = candidates.filter((item) => !item.natural && item.compatible).length;
-    ui.tmCandidateStatus.textContent = tmCompatibilityByMove
-      ? candidates.length + " Pokémon tương thích với " + selected.name + " (" + naturalCount + " pool tự nhiên · " + compatibleCount + " cần TM theo snapshot " + TM_COMPATIBILITY_REVIEW_DATE + "). Lọc tên rồi chọn để xem build."
-      : naturalCount + " Pokémon có move này trong pool tự nhiên. Bảng TM tương thích chưa tải; mở checker để đối chiếu Pokémon khác hệ.";
-    if (!filtered.length) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "Không có Pokémon khớp bộ lọc.";
-      ui.tmCandidates.append(empty);
-      return;
-    }
-
-    const shown = filtered.slice(0, filter ? 12 : 8);
-    for (const candidate of shown) {
-      const { pokemon, natural } = candidate;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "chip";
-      button.textContent = pokemon.name + (natural ? " · tự nhiên" : " · TM");
-      button.title = (natural ? "Move thuộc pool tự nhiên của " : "Move cần TM; bảng nguồn xác nhận tương thích với ") + pokemon.name;
-      button.addEventListener("click", () => {
-        state.tmBuildPokemon = pokemon.name;
-        ui.tmBuildPokemon.value = pokemon.name;
-        persistState();
-        loadCommunityBuildForSelected();
-      });
-      ui.tmCandidates.append(button);
-    }
-    if (filtered.length > shown.length) {
-      const more = document.createElement("span");
-      more.className = "muted";
-      more.textContent = " +" + (filtered.length - shown.length) + " · lọc theo tên để thu hẹp";
-      ui.tmCandidates.append(more);
-    }
-  }
-
-  function queueTmScan(delay = 160) {
-    if (tmScanTimer) return;
-    tmScanTimer = setTimeout(() => {
-      tmScanTimer = null;
-      if (isScreenVisible(document.querySelector("#scr-shop"))) scanTmShop();
-    }, delay);
   }
 
   function parseLocalizedInteger(value) {
@@ -1058,104 +1020,51 @@
       || null;
   }
 
-  function scanTmShop() {
-    const shopScreen = document.querySelector("#scr-shop");
-    const shopBody = document.querySelector("#shop-body");
-    if (!isScreenVisible(shopScreen) || !shopBody) return;
-
-    const partner = currentPartnerForTms();
-    tmOffers = Array.from(shopBody.querySelectorAll('.upg-item button[data-buy^="tm:"]'))
-      .map((button) => {
-        const card = button.closest(".upg-item");
-        const title = card?.querySelector("b");
-        const titleText = title?.innerText?.trim() || "";
-        const leadingText = Array.from(title?.childNodes || [])
-          .find((node) => node.nodeType === Node.TEXT_NODE)?.textContent?.trim() || titleText;
-        const moveNameText = leadingText.replace(/^(?:TM|MT|CT)\s*/i, "").trim();
-        const move = findMoveByLabel(moveNameText) || findMoveByLabel(titleText);
-        const description = card?.querySelector(".sub")?.innerText?.trim() || "";
-        const normalizedDescription = normalize(description);
-        const highlightedStatus = card?.querySelector(".sub .gold");
-        const normalizedStatus = normalize(highlightedStatus?.innerText || description);
-        const alreadyKnows = /already knows|ya la sabe|la connait deja|la conosce gia|ja sabe|ja a sabe|da biet/.test(normalizedStatus)
-          || /已学会|已经会|已经学会/.test(highlightedStatus?.innerText || "");
-        const canLearn = /can learn|la puede aprender|peut apprendre|puo impararla|pode aprender|co the hoc/.test(normalizedStatus)
-          || Boolean(highlightedStatus && !alreadyKnows);
-        const matchesMoveDescription = Boolean(move?.description && normalizedDescription === normalize(move.description));
-        const learnability = alreadyKnows ? "known" : canLearn ? "learnable" : matchesMoveDescription ? "unlearnable" : "unknown";
-        const countText = card?.querySelector("b small.gold")?.innerText || "";
-        const bagCount = ownedTms.find((item) => normalize(item.name) === normalize(move?.name || moveNameText))?.count || 0;
-        return {
-          id: button.dataset.buy.slice(3),
-          name: move?.name || moveNameText,
-          move,
-          price: parseLocalizedInteger(button.innerText),
-          ownedCount: Math.max(parseLocalizedInteger(countText) || 0, bagCount),
-          learnability,
-          description
-        };
-      });
-    tmShopScannedAt = Date.now();
-
-    const learnableCount = tmOffers.filter((offer) => offer.learnability === "learnable").length;
-    const knownCount = tmOffers.filter((offer) => offer.learnability === "known").length;
-    const unmatchedCount = tmOffers.filter((offer) => !offer.move).length;
-    const partnerLabel = partner?.name || "chưa nhận diện Partner";
-    ui.tmStatus.textContent = tmOffers.length
-      ? `Đã quét ${tmOffers.length} TM hôm nay cho ${partnerLabel}; ${learnableCount} TM dạy được, ${knownCount} Partner đã biết${unmatchedCount ? ` · ${unmatchedCount} tên chưa nhận diện` : ""}.`
-      : "Shop đang tải danh sách TM; extension sẽ quét lại khi nội dung xuất hiện.";
-    renderTmRecommendations();
-    renderCommunityBuild();
-  }
-
   async function loadCommunityBuildForSelected() {
+    const partner = currentPartnerForTms();
     if (!pokemonData.length) {
       ui.tmBuildStatus.textContent = "Đang tải Pokédex; hãy thử lại sau.";
       return;
     }
-    const typedName = ui.tmBuildPokemon.value.trim();
-    const pokemon = pokemonData.find((item) => normalize(item.name) === normalize(typedName))
-      || findPokemonInText(typedName);
-    if (!pokemon) {
-      ui.tmBuildStatus.textContent = "Chọn Pokémon có trong danh sách Pokédex để đối chiếu build.";
+    if (!partner) {
+      ui.tmBuildStatus.textContent = "Chưa nhận diện Partner từ menu game.";
       return;
     }
 
-    state.tmBuildPokemon = pokemon.name;
-    ui.tmBuildPokemon.value = pokemon.name;
+    state.tmBuildPokemon = partner.name;
     persistState();
     communityBuild = null;
     const requestId = ++communityBuildRequestId;
-    ui.tmBuildStatus.textContent = "Đang tải build tham khảo cho " + pokemon.name + "…";
-    ui.tmBuildResult.replaceChildren();
+    ui.tmBuildStatus.textContent = "Đang tải build tham khảo cho Partner " + partner.name + "…";
+    renderCommunityBuild();
 
     try {
       const indexResponse = await chrome.runtime.sendMessage({ type: "psba:get-community-build-index" });
       if (!indexResponse || indexResponse.error) throw new Error(indexResponse?.error || "Không đọc được danh sách build.");
-      const slug = findCommunityBuildSlug(indexResponse.html, pokemon);
-      if (!slug) throw new Error("Nguồn tham khảo chưa có trang build cho Pokémon này.");
+      const slug = findCommunityBuildSlug(indexResponse.html, partner);
+      if (!slug) throw new Error("Nguồn tham khảo chưa có trang build cho Partner này.");
 
       const pageResponse = await chrome.runtime.sendMessage({
         type: "psba:get-community-build-page",
         slug
       });
       if (!pageResponse || pageResponse.error) throw new Error(pageResponse?.error || "Không tải được trang build.");
-      const parsed = parseCommunityBuildPage(pageResponse.html, pokemon);
+      const parsed = parseCommunityBuildPage(pageResponse.html, partner);
       if (!parsed.moves.length) throw new Error("Trang tham khảo chưa có bảng moves mà extension nhận diện được.");
       if (requestId !== communityBuildRequestId) return;
 
       communityBuild = {
         ...parsed,
-        pokemon,
+        pokemon: partner,
         url: pageResponse.url,
         sourceDate: parsed.sourceDate || "chưa ghi ngày"
       };
-      ui.tmBuildStatus.textContent = "Đã nạp build tham khảo cho " + pokemon.name + " · dữ liệu nguồn " + communityBuild.sourceDate + ".";
+      ui.tmBuildStatus.textContent = "Đã nạp build Partner " + partner.name + " · dữ liệu nguồn " + communityBuild.sourceDate + ".";
       renderCommunityBuild();
     } catch (error) {
       if (requestId !== communityBuildRequestId) return;
       ui.tmBuildStatus.textContent = (error?.message || "Không tải được build cộng đồng.")
-        + " Có thể mở nguồn Builds 966 ở các liên kết bên dưới.";
+        + " Có thể mở nguồn Builds tham khảo bên dưới.";
       ui.tmBuildResult.replaceChildren();
     }
   }
@@ -1215,136 +1124,147 @@
     };
   }
 
+  function getCommunityTmMoves() {
+    if (!communityBuild) return [];
+    const pokemon = communityBuild.pokemon;
+    return communityBuild.moves
+      .map((item) => {
+        const move = item.move;
+        const natural = Boolean(move && (
+          normalize(move.type) === "normal"
+          || pokemon.types.some((type) => normalize(type) === normalize(move.type))
+        ));
+        const compatibility = tmCompatibilityFor(pokemon, move);
+        const ownedCount = ownedTms.find((entry) => normalize(entry.name) === normalize(item.name))?.count || 0;
+        const learnedLevel = state.learnedMoves.find((entry) => normalize(entry.name) === normalize(item.name));
+        const score = move ? scoreCandidate({
+          text: move.name,
+          normalizedText: normalize(`${move.name} ${move.description}`),
+          move,
+          evolution: false,
+          stat: ""
+        }, pokemon).score : 0;
+        return { ...item, natural, compatibility, ownedCount, learnedLevel, score };
+      })
+      .filter((item) => item.move && !item.natural)
+      .sort((a, b) => b.score - a.score || normalize(a.name).localeCompare(normalize(b.name)));
+  }
+
+  function hasEnoughOwnedTms(items) {
+    const required = new Map();
+    for (const item of items) {
+      if (item.compatibility !== true) return false;
+      const key = normalize(item.name);
+      required.set(key, (required.get(key) || 0) + 1);
+    }
+    return [...required.entries()].every(([key, count]) =>
+      (ownedTms.find((item) => normalize(item.name) === key)?.count || 0) >= count
+    );
+  }
+
   function renderCommunityBuild() {
     if (!ui.tmBuildResult) return;
     ui.tmBuildResult.replaceChildren();
     if (!communityBuild) {
       const message = document.createElement("p");
       message.className = "muted";
-      message.textContent = state.tmBuildPokemon
-        ? "Nhấn So sánh để tải build tham khảo và đối chiếu TM."
-        : "Chọn Pokémon để tải build tham khảo cộng đồng.";
+      message.textContent = currentPartnerForTms()
+        ? "Đang chờ build tham khảo cho Partner."
+        : "Đang chờ nhận diện Partner từ menu game.";
       ui.tmBuildResult.append(message);
       return;
     }
 
-    const pokemon = communityBuild.pokemon;
-    const livePartner = currentPartnerForTms();
-    const targetIsLive = Boolean(livePartner && normalize(livePartner.name) === normalize(pokemon.name));
-    const rows = [];
-    let naturalCount = 0;
-    let tmNeededCount = 0;
-    let ownedNeededCount = 0;
-    let compatibleNeededCount = 0;
-    let incompatibleCount = 0;
-    let unknownCompatibilityCount = 0;
-    let buyTotal = 0;
-    let priceUnknownCount = 0;
-
-    for (const item of communityBuild.moves) {
-      const move = item.move;
-      const natural = Boolean(move && (
-        normalize(move.type) === "normal"
-        || pokemon.types.some((type) => normalize(type) === normalize(move.type))
-      ));
-      const offer = tmOffers.find((entry) => normalize(entry.name) === normalize(item.name));
-      const bagCount = ownedTms.find((entry) => normalize(entry.name) === normalize(item.name))?.count || 0;
-      const ownedCount = Math.max(bagCount, offer?.ownedCount || 0);
-      const sourceCompatibility = tmCompatibilityFor(pokemon, move);
-      const liveCompatibility = targetIsLive && offer?.learnability === "learnable"
-        ? true
-        : targetIsLive && offer?.learnability === "unlearnable"
-          ? false
-          : null;
-      const compatible = liveCompatibility === null ? sourceCompatibility : liveCompatibility;
-      const alreadyKnown = targetIsLive && offer?.learnability === "known";
-      let detail = "";
-
-      if (!move) {
-        detail = "Tên move chưa khớp danh mục; chưa tính được hệ hoặc TM.";
-      } else if (natural) {
-        naturalCount += 1;
-        detail = ownedCount
-          ? "Có sẵn trong pool tự nhiên; không cần dùng TM trong Túi."
-          : "Pool tự nhiên theo hệ; không cần mua hoặc dạy TM.";
-      } else {
-        if (alreadyKnown) {
-          detail = "Partner hiện tại đã biết move; không cần thêm TM.";
-        } else {
-          tmNeededCount += 1;
-          if (compatible === true) compatibleNeededCount += 1;
-          else if (compatible === false) incompatibleCount += 1;
-          else unknownCompatibilityCount += 1;
-
-          if (ownedCount > 0 && compatible === true) {
-            ownedNeededCount += 1;
-            detail = "Có TM trong Túi ×" + ownedCount + " · nguồn xác nhận Pokémon này học được.";
-          } else if (ownedCount > 0 && compatible === false) {
-            detail = "Có TM trong Túi ×" + ownedCount + " · nguồn snapshot không xác nhận Pokémon này học được TM.";
-          } else if (ownedCount > 0) {
-            detail = "Có TM trong Túi ×" + ownedCount + " · chưa có dữ liệu xác nhận tương thích.";
-          } else if (compatible === false) {
-            detail = "TM này không tương thích theo dữ liệu game đã rà soát.";
-          } else if (compatible === true && targetIsLive && offer?.price !== null && offer?.price !== undefined) {
-            buyTotal += offer.price;
-            detail = "Thiếu 1 TM · Shop hôm nay bán " + offer.price.toLocaleString() + " PokéCoin.";
-          } else if (compatible === true) {
-            priceUnknownCount += 1;
-            detail = "Cần 1 TM · nguồn xác nhận tương thích; Shop hôm nay chưa có giá cho move này.";
-          } else if (targetIsLive && offer?.learnability === "learnable") {
-            if (offer.price !== null) {
-              buyTotal += offer.price;
-              detail = "Thiếu 1 TM · Shop hôm nay bán " + offer.price.toLocaleString() + " PokéCoin.";
-            } else {
-              priceUnknownCount += 1;
-              detail = "Shop xác nhận Partner học được nhưng chưa đọc được giá.";
-            }
-          } else if (targetIsLive && offer?.learnability === "unlearnable") {
-            detail = "Shop hiện báo Partner không học được TM này.";
-          } else if (offer && offer.price !== null) {
-            priceUnknownCount += 1;
-            detail = "Thiếu TM · Shop có bán hôm nay giá " + offer.price.toLocaleString() + " PokéCoin; chưa xác nhận cho Pokémon đã chọn.";
-          } else if (!tmBagScannedAt && !offer) {
-            detail = "Chưa quét Túi nên chưa biết có TM này hay không; cần kiểm tra tương thích trước khi dạy.";
-          } else {
-            detail = "Build có move khác hệ; chưa có TM trong Túi và Shop chưa có offer để xác nhận.";
-          }
-        }
-      }
-
-      rows.push({ ...item, detail, natural, ownedCount, compatible });
-    }
-
+    const partner = currentPartnerForTms();
+    const isCurrentPartner = Boolean(partner && normalize(partner.name) === normalize(communityBuild.pokemon.name));
+    const allTmMoves = getCommunityTmMoves();
+    const compatibleTmMoves = allTmMoves.filter((item) => item.compatibility === true);
+    const incompatibleTmMoves = allTmMoves.filter((item) => item.compatibility !== true);
+    const picks = compatibleTmMoves.slice(0, 3);
     const summary = document.createElement("div");
     summary.className = "tm-budget";
-    const budget = targetIsLive
-      ? gameCoins === null
-        ? "Pool tự nhiên " + naturalCount + "/" + rows.length + " · cần TM " + tmNeededCount + " · tương thích " + compatibleNeededCount + " · có trong Túi và dùng được " + ownedNeededCount + " · không tương thích " + incompatibleCount + " · Shop có giá " + buyTotal.toLocaleString() + " PokéCoin" + (priceUnknownCount ? " · " + priceUnknownCount + " TM chưa có offer/giá" : "") + " · chưa đọc được số dư" + (!tmBagScannedAt ? " · hãy quét Túi để đọc số lượng" : "") + (unknownCompatibilityCount ? " · " + unknownCompatibilityCount + " move chưa xác định" : "")
-        : "Pool tự nhiên " + naturalCount + "/" + rows.length + " · cần TM " + tmNeededCount + " · tương thích " + compatibleNeededCount + " · có trong Túi và dùng được " + ownedNeededCount + " · không tương thích " + incompatibleCount + " · Shop có giá " + buyTotal.toLocaleString() + " PokéCoin" + (priceUnknownCount ? " · " + priceUnknownCount + " TM chưa có offer/giá" : "") + (gameCoins >= buyTotal ? " · còn " + Math.max(0, gameCoins - buyTotal).toLocaleString() + " sau offer có giá" : " · thiếu " + Math.max(0, buyTotal - gameCoins).toLocaleString() + " cho offer có giá") + (!tmBagScannedAt ? " · hãy quét Túi để đọc số lượng" : "") + (unknownCompatibilityCount ? " · " + unknownCompatibilityCount + " move chưa xác định" : "")
-      : "Pool tự nhiên " + naturalCount + "/" + rows.length + " · cần TM " + tmNeededCount + " · tương thích " + compatibleNeededCount + " · có trong Túi và dùng được " + ownedNeededCount + " · không tương thích " + incompatibleCount + " · mức tương thích chỉ theo snapshot " + TM_COMPATIBILITY_REVIEW_DATE + "." + (!tmBagScannedAt ? " Hãy quét Túi để đọc số lượng." : "") + (unknownCompatibilityCount ? " Còn " + unknownCompatibilityCount + " move chưa xác định." : "");
-    summary.textContent = budget;
+    summary.textContent = `${picks.length} TM ưu tiên hiển thị · build cần ${allTmMoves.length} TM tổng cộng · ${tmBagScannedAt ? "Túi đã được đọc" : "mở Túi để kiểm tra số lượng TM"}.`;
     ui.tmBuildResult.append(summary);
 
-    for (const [index, item] of rows.entries()) {
+    if (!picks.length) {
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = !allTmMoves.length
+        ? "Build tham khảo không có move TM khác hệ cần dạy cho Partner."
+        : tmCompatibilityByMove
+          ? "Bảng tương thích chưa xác nhận TM nào trong build cho Partner này."
+          : "Chưa đọc được bảng tương thích TM nên chưa thể xếp hạng move an toàn.";
+      ui.tmBuildResult.append(message);
+    }
+
+    for (const [index, item] of picks.entries()) {
       const row = document.createElement("div");
-      row.className = "recommendation" + (index === 0 ? " best" : "");
+      row.className = `recommendation ${index === 0 ? "best" : ""}`;
       const head = document.createElement("div");
       head.className = "recommendation-head";
       const name = document.createElement("strong");
-      name.textContent = item.name;
+      name.textContent = `${index + 1}. ${item.name}`;
       const type = document.createElement("span");
       type.className = "score";
-      type.textContent = item.move?.type || "TM";
+      type.textContent = `${item.score}đ`;
       head.append(name, type);
       const detail = document.createElement("p");
-      detail.textContent = item.detail;
+      if (item.compatibility === true && item.ownedCount > 0) {
+        detail.textContent = `Tương thích · trong Túi ×${item.ownedCount}${item.learnedLevel ? " · đã ghi nhận trong lượt" : ""}.`;
+      } else if (item.compatibility === true) {
+        detail.textContent = tmBagScannedAt ? "Tương thích · TM chưa có trong Túi." : "Tương thích theo dữ liệu · mở Túi để kiểm tra TM.";
+      } else if (item.compatibility === false) {
+        detail.textContent = "Bảng tương thích không xác nhận TM này cho Partner.";
+      } else {
+        detail.textContent = "Chưa xác định tương thích TM; chưa bật dạy tự động.";
+      }
       row.append(head, detail);
       ui.tmBuildResult.append(row);
     }
 
+    const actionRow = document.createElement("div");
+    actionRow.className = "tm-action-row";
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "quiet-button";
+    copyButton.textContent = "Sao chép build";
+    copyButton.addEventListener("click", copyCommunityBuild);
+    const applyButton = document.createElement("button");
+    applyButton.type = "button";
+    applyButton.className = "quiet-button";
+    applyButton.textContent = "Dạy TM tự động";
+    const allMovesCompatible = allTmMoves.length > 0 && allTmMoves.every((item) => item.compatibility === true);
+    const canApply = isCurrentPartner && tmBagScannedAt > 0 && picks.length > 0 && allMovesCompatible;
+    applyButton.disabled = !canApply;
+    applyButton.title = !isCurrentPartner
+      ? "Chỉ áp dụng khi build khớp Partner đang chơi."
+      : !tmBagScannedAt
+        ? "Mở Túi trong game để extension kiểm tra số TM."
+      : allMovesCompatible
+        ? "Nút sẽ kiểm tra các TM còn thiếu sau khi mở Pokédex; move đã học sẵn được bỏ qua."
+        : "Build có TM chưa xác nhận tương thích; không thể tự dạy an toàn.";
+    applyButton.addEventListener("click", applyCommunityTmBuild);
+    actionRow.append(copyButton, applyButton);
+    ui.tmBuildResult.append(actionRow);
+
+    if (allTmMoves.length > picks.length) {
+      const remaining = document.createElement("p");
+      remaining.className = "muted tm-help";
+      const hidden = allTmMoves.slice(picks.length);
+      remaining.textContent = `TM còn lại trong bộ build: ${hidden.map((item) => `${item.name} ×${item.ownedCount}`).join(", ")}. Nút áp dụng sẽ dạy toàn bộ ${allTmMoves.length} TM nếu đủ.`;
+      ui.tmBuildResult.append(remaining);
+    }
+
+    if (incompatibleTmMoves.length) {
+      const warning = document.createElement("p");
+      warning.className = "muted tm-help";
+      warning.textContent = `Không tự dạy vì bảng tương thích chưa xác nhận: ${incompatibleTmMoves.map((item) => item.name).join(", ")}.`;
+      ui.tmBuildResult.append(warning);
+    }
+
     const footer = document.createElement("p");
     footer.className = "muted tm-help";
-    footer.textContent = "Nguồn build cộng đồng là gợi ý tạo từ luật game, không phải xếp hạng win-rate. TM khác hệ cần kiểm tra tương thích và dạy thủ công.";
+    footer.textContent = "Nguồn tham khảo cung cấp một build cho mỗi Pokémon, không có thống kê lượt đề xuất để xếp hạng ba build độc lập. Danh sách này là tối đa ba TM ưu tiên trong build đó; dạy TM sẽ mở khóa move vĩnh viễn cho Partner.";
     const link = document.createElement("a");
     link.href = communityBuild.url;
     link.target = "_blank";
@@ -1352,6 +1272,163 @@
     link.textContent = "Mở build nguồn";
     footer.append(document.createTextNode(" "), link);
     ui.tmBuildResult.append(footer);
+  }
+
+  async function copyCommunityBuild() {
+    if (!communityBuild) return;
+    const text = [
+      `${communityBuild.pokemon.name} · ${communityBuild.title}`,
+      ...communityBuild.moves.map((item, index) => {
+        const kind = item.move && (normalize(item.move.type) === "normal"
+          || communityBuild.pokemon.types.some((type) => normalize(type) === normalize(item.move.type)))
+          ? "pool tự nhiên" : "TM";
+        return `${index + 1}. ${item.name}${item.move?.type ? ` (${item.move.type}; ${kind})` : ` (${kind})`}`;
+      }),
+      communityBuild.url
+    ].join("\n");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
+      ui.tmStatus.textContent = "Đã sao chép danh sách TM của build Partner.";
+    } catch (_error) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.append(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      ui.tmStatus.textContent = copied
+        ? "Đã sao chép danh sách TM của build Partner."
+        : "Trình duyệt chặn clipboard; hãy mở build nguồn để sao chép thủ công.";
+    }
+  }
+
+  function dexHasTaughtTm(detail, moveName) {
+    if (!detail) return false;
+    const tmRow = Array.from(detail.querySelectorAll(".mx-row")).find((row) => {
+      const label = normalize(row.querySelector(":scope > span")?.textContent);
+      return ["tm", "mt", "ct"].includes(label);
+    });
+    return Array.from(tmRow?.querySelectorAll(".move-icons [title]") || [])
+      .some((node) => normalize(node.getAttribute("title")) === normalize(moveName));
+  }
+
+  async function applyCommunityTmBuild() {
+    const partner = currentPartnerForTms();
+    const picks = getCommunityTmMoves();
+    if (!communityBuild || !partner || normalize(partner.name) !== normalize(communityBuild.pokemon.name)) {
+      ui.tmStatus.textContent = "Build không khớp Partner hiện tại; tải lại build theo Partner trước.";
+      return;
+    }
+    if (!tmBagScannedAt || !picks.length) {
+      ui.tmStatus.textContent = "Mở Túi để cập nhật số lượng TM và tải lại build tương thích.";
+      return;
+    }
+    const fullBuildTmMoves = picks;
+    if (isScreenVisible(document.querySelector("#scr-levelup")) || isScreenVisible(document.querySelector("#scr-over"))) {
+      ui.tmStatus.textContent = "Hoàn tất màn hình trận đấu rồi áp dụng build TM từ menu hoặc Pokédex.";
+      return;
+    }
+
+    const applyButton = [...ui.tmBuildResult.querySelectorAll("button")].find((button) => button.textContent === "Dạy TM tự động");
+    if (applyButton) applyButton.disabled = true;
+    try {
+      if (!isScreenVisible(document.querySelector("#scr-dex"))) {
+        const menu = document.querySelector("#scr-menu");
+        if (!isScreenVisible(menu)) {
+          const back = document.querySelector("#scr-goals [data-back], #scr-gacha [data-back], #scr-bag [data-back], [data-back]");
+          if (back && !back.disabled) back.click();
+          await waitFor(() => isScreenVisible(document.querySelector("#scr-menu")), 6000);
+        }
+        const dexButton = document.querySelector('#scr-menu [data-go="dex"]');
+        if (!isScreenVisible(document.querySelector("#scr-menu")) || !dexButton || dexButton.disabled) {
+          throw new Error("Mở menu chính rồi chọn Pokédex để dạy TM.");
+        }
+        dexButton.click();
+        await waitFor(() => isScreenVisible(document.querySelector("#scr-dex")), 6000);
+      }
+
+      const search = document.querySelector("#dex-q");
+      const grid = document.querySelector("#dex-grid");
+      if (!search || !grid) throw new Error("Không tìm thấy danh sách Pokémon trong Pokédex.");
+      search.value = partner.name;
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+      const card = await waitFor(() => {
+        const id = String(partner.id).padStart(3, "0");
+        return Array.from(grid.querySelectorAll(".cell")).find((cell) => {
+          const number = (cell.querySelector(".no")?.textContent || "").match(/\d+/)?.[0];
+          return number === id || Number(number) === Number(partner.id);
+        }) || null;
+      }, 6000);
+      if (!card) throw new Error(`Không tìm thấy ${partner.name} trong Pokédex.`);
+      card.click();
+      await waitFor(() => {
+        const detail = document.querySelector("#dex-detail");
+        return isScreenVisible(detail) && detail.querySelector('.mx-row button[data-v="tm"]');
+      }, 6000);
+
+      const movesToTeach = fullBuildTmMoves.filter((item) => !dexHasTaughtTm(document.querySelector("#dex-detail"), item.name));
+      if (!hasEnoughOwnedTms(movesToTeach)) {
+        const missing = movesToTeach.filter((item) => {
+          const owned = ownedTms.find((entry) => normalize(entry.name) === normalize(item.name));
+          return !owned || owned.count < 1;
+        }).map((item) => item.name);
+        throw new Error(`Túi chưa đủ TM để hoàn tất build. Còn thiếu: ${missing.join(", ")}.`);
+      }
+
+      for (const item of movesToTeach) {
+        const availableTm = ownedTms.find((entry) => normalize(entry.name) === normalize(item.name));
+        if (!tmBagScannedAt || !availableTm || availableTm.count < 1) {
+          throw new Error(`Không còn TM ${item.name} trong Túi; dừng để tránh dạy thiếu.`);
+        }
+        const teachButton = document.querySelector('#dex-detail .mx-row button[data-v="tm"]');
+        if (!teachButton || teachButton.disabled) throw new Error("Pokédex không mở được lựa chọn dạy TM.");
+        teachButton.click();
+        const picker = await waitFor(() => {
+          const node = document.querySelector("#mx-picker");
+          return node && isScreenVisible(node) ? node : null;
+        }, 4000);
+        const selectableMoves = Array.from(picker.querySelectorAll("button[data-v]"))
+          .filter((button) => !button.disabled);
+        const exactButtons = selectableMoves.filter((button) => normalize(button.textContent) === normalize(item.name));
+        const moveButtons = exactButtons.length ? exactButtons : selectableMoves.filter((button) => normalize(button.textContent).includes(normalize(item.name)));
+        if (moveButtons.length !== 1) throw new Error(`Không tìm thấy duy nhất lựa chọn TM ${item.name}; dừng build an toàn.`);
+        moveButtons[0].click();
+        await waitFor(() => dexHasTaughtTm(document.querySelector("#dex-detail"), item.name), 6000);
+        const owned = ownedTms.find((entry) => normalize(entry.name) === normalize(item.name));
+        if (owned) owned.count = Math.max(0, owned.count - 1);
+        renderCommunityBuild();
+      }
+      ui.tmStatus.textContent = movesToTeach.length
+        ? `Đã dạy ${movesToTeach.length} TM theo build ${partner.name}.`
+        : `Partner ${partner.name} đã học đủ các TM trong build.`;
+      ui.tmBuildStatus.textContent = "Hoàn tất áp dụng build TM trong Pokédex.";
+      if (isScreenVisible(document.querySelector("#scr-bag"))) queueBagScan(250);
+    } catch (error) {
+      ui.tmStatus.textContent = error?.message || "Dạy TM đã dừng vì giao diện game thay đổi.";
+    } finally {
+      renderCommunityBuild();
+    }
+  }
+
+  function waitFor(predicate, timeout = 5000, interval = 120) {
+    return new Promise((resolve, reject) => {
+      const startedAt = Date.now();
+      const check = () => {
+        let result = null;
+        try { result = predicate(); } catch (_error) {}
+        if (result) return resolve(result);
+        if (Date.now() - startedAt >= timeout) return reject(new Error("Hết thời gian chờ giao diện game."));
+        setTimeout(check, interval);
+      };
+      check();
+    });
   }
 
   function selectMissionsTab() {
@@ -1390,7 +1467,7 @@
     const inProgress = Math.max(0, cards.length - ready.length - claimed.length);
     ui.missionStatus.textContent = `${ready.length} chờ nhận · ${claimed.length} đã nhận · ${inProgress} đang tiến hành${state.autoClaimMissions ? " · tự nhận đang bật" : ""}.`;
 
-    if (!state.autoClaimMissions || !ready.length || missionClaimTimer) return;
+    if (!state.autoClaimMissions || !ready.length || missionClaimTimer || postRunAutomationActive) return;
     const now = Date.now();
     const nextClaim = ready
       .map((card) => ({ card, index: cards.indexOf(card), button: card.querySelector("button:not([disabled])") }))
@@ -1634,153 +1711,7 @@
     return { ...candidate, score, reasons };
   }
 
-  function renderTmRecommendations() {
-    ui.tmRecommendations.replaceChildren();
-    if (!tmOffers.length) {
-      const message = document.createElement("p");
-      message.className = "muted";
-      message.textContent = "Gợi ý mua và build TM theo Partner sẽ hiển thị sau khi quét Shop.";
-      ui.tmRecommendations.append(message);
-      return;
-    }
 
-    const partner = currentPartnerForTms();
-    if (!partner) {
-      const message = document.createElement("p");
-      message.className = "muted";
-      message.textContent = "Chưa nhận diện Partner. Đồng bộ hoặc chọn Pokémon để xếp build TM.";
-      ui.tmRecommendations.append(message);
-      return;
-    }
-
-    const ranked = tmOffers
-      .filter((offer) => offer.move && offer.learnability === "learnable")
-      .map((offer) => {
-        const candidate = scoreCandidate({
-          text: offer.move.name,
-          normalizedText: normalize(`${offer.move.name} ${offer.move.description}`),
-          move: offer.move,
-          evolution: false,
-          stat: ""
-        }, partner);
-        if (offer.ownedCount > 0) {
-          candidate.score += 5;
-          candidate.reasons.unshift("đã có trong Túi, không tốn thêm PokéCoin");
-        }
-        candidate.reasons.unshift("Partner học được TM này");
-        return { ...offer, score: candidate.score + 10, reasons: candidate.reasons };
-      })
-      .sort((a, b) => b.score - a.score || (a.price ?? Infinity) - (b.price ?? Infinity));
-
-    if (!ranked.length) {
-      const message = document.createElement("p");
-      message.className = "muted";
-      const unknownCount = tmOffers.filter((offer) => offer.move && offer.learnability === "unknown").length;
-      const unmatchedCount = tmOffers.filter((offer) => !offer.move).length;
-      message.textContent = unknownCount
-        ? `Đọc được ${unknownCount} TM nhưng chưa xác nhận Partner học được từ thông tin Shop. Không xếp chúng vào build để tránh gợi ý sai.`
-        : unmatchedCount
-          ? `${unmatchedCount} tên TM chưa khớp danh mục tham khảo; đổi ngôn ngữ game sang English rồi quét lại để nhận diện chính xác.`
-          : "Trong 8 TM hôm nay chưa có move mới mà Partner học được.";
-      ui.tmRecommendations.append(message);
-      return;
-    }
-
-    const build = chooseTmBuild(ranked, partner);
-    const unpriced = build.some((offer) => offer.ownedCount === 0 && offer.price === null);
-    const purchaseTotal = build.reduce((sum, offer) => sum + (offer.ownedCount > 0 ? 0 : offer.price || 0), 0);
-    const summary = document.createElement("div");
-    summary.className = "tm-budget";
-    const budgetText = gameCoins === null
-      ? `Build ${build.length} TM · cần ${purchaseTotal.toLocaleString()} PokéCoin${unpriced ? " trở lên; còn TM chưa đọc được giá" : ""} · chưa đọc được số dư.`
-      : gameCoins >= purchaseTotal
-        ? `Build ${build.length} TM · cần ${purchaseTotal.toLocaleString()} · còn ${Math.max(0, gameCoins - purchaseTotal).toLocaleString()} PokéCoin${unpriced ? " trở lên; còn TM chưa đọc được giá" : ""}.`
-        : `Build ${build.length} TM · cần ${purchaseTotal.toLocaleString()} · thiếu ${(purchaseTotal - gameCoins).toLocaleString()} PokéCoin${unpriced ? " trở lên; còn TM chưa đọc được giá" : ""}.`;
-    summary.textContent = budgetText;
-    ui.tmRecommendations.append(summary);
-
-    for (const [index, offer] of build.entries()) {
-      const row = document.createElement("div");
-      row.className = `recommendation ${index === 0 ? "best" : ""}`;
-      const head = document.createElement("div");
-      head.className = "recommendation-head";
-      const title = document.createElement("strong");
-      title.textContent = `${index + 1}. ${offer.move.name}`;
-      const score = document.createElement("span");
-      score.className = "score";
-      score.textContent = `${offer.planScore}đ`;
-      head.append(title, score);
-
-      const cost = document.createElement("p");
-      if (offer.ownedCount > 0) {
-        cost.textContent = `Có trong Túi ×${offer.ownedCount} · dùng ngay, không cần mua thêm.`;
-      } else if (offer.price === null) {
-        cost.textContent = "Chưa đọc được giá TM trong Shop.";
-      } else if (gameCoins === null) {
-        cost.textContent = `Giá ${offer.price.toLocaleString()} PokéCoin · chưa đọc được số dư.`;
-      } else if (gameCoins >= offer.price) {
-        cost.textContent = `Giá ${offer.price.toLocaleString()} PokéCoin · mua được, còn ${(gameCoins - offer.price).toLocaleString()}.`;
-      } else {
-        cost.textContent = `Giá ${offer.price.toLocaleString()} PokéCoin · thiếu ${(offer.price - gameCoins).toLocaleString()}.`;
-      }
-      const reason = document.createElement("p");
-      reason.textContent = [...offer.reasons, ...offer.synergyReasons].slice(0, 4).join(" · ");
-      row.append(head, cost, reason);
-      ui.tmRecommendations.append(row);
-    }
-
-    const help = document.createElement("p");
-    help.className = "muted tm-help";
-    const scannedAt = tmShopScannedAt ? new Date(tmShopScannedAt).toLocaleTimeString() : "vừa quét";
-    const comboNotes = [...new Set(build.flatMap((offer) => offer.synergyReasons))].slice(0, 2);
-    help.textContent = `Build xét phối hợp giữa các TM${comboNotes.length ? `: ${comboNotes.join(" · ")}` : ""} · quét lúc ${scannedAt}. Mua ở Shop, sau đó dùng trong Túi.`;
-    ui.tmRecommendations.append(help);
-  }
-
-  function chooseTmBuild(candidates, pokemon) {
-    const targetSize = Math.min(MAX_MOVE_SLOTS, candidates.length);
-    let bestTotal = -Infinity;
-    let bestMoves = [];
-    let bestPairs = [];
-    const selected = [];
-
-    function search(startIndex) {
-      if (selected.length === targetSize) {
-        const pairs = [];
-        let total = selected.reduce((sum, offer) => sum + offer.score, 0);
-        for (let i = 0; i < selected.length; i += 1) {
-          for (let j = i + 1; j < selected.length; j += 1) {
-            const result = fusionPairScore(selected[i].move, selected[j].move, pokemon);
-            pairs.push({ first: selected[i], second: selected[j], ...result });
-            total += result.score * 0.45;
-          }
-        }
-        if (total > bestTotal) {
-          bestTotal = total;
-          bestMoves = [...selected];
-          bestPairs = pairs;
-        }
-        return;
-      }
-
-      const needed = targetSize - selected.length;
-      for (let i = startIndex; i <= candidates.length - needed; i += 1) {
-        selected.push(candidates[i]);
-        search(i + 1);
-        selected.pop();
-      }
-    }
-
-    search(0);
-    return bestMoves
-      .map((offer) => {
-        const relatedPairs = bestPairs.filter((pair) => pair.first === offer || pair.second === offer);
-        const pairBonus = relatedPairs.reduce((sum, pair) => sum + pair.score * 0.45, 0);
-        const synergyReasons = [...new Set(relatedPairs.flatMap((pair) => pair.reasons))];
-        return { ...offer, planScore: Math.round(offer.score + pairBonus), synergyReasons };
-      })
-      .sort((a, b) => b.planScore - a.planScore || (a.price ?? Infinity) - (b.price ?? Infinity));
-  }
 
   function refreshRecommendations() {
     cachedCandidates = rankCurrentCandidates();
@@ -2131,7 +2062,7 @@
     persistState();
     renderBuild();
     refreshRecommendations();
-    renderTmRecommendations();
+    renderCommunityBuild();
   }
 
   function renderBuild() {
@@ -2179,7 +2110,7 @@
   const PANEL_CSS = `
     :host { all: initial; color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
     * { box-sizing: border-box; }
-    .panel { position: fixed; z-index: 2147483646; top: 14px; right: 14px; width: min(318px, calc(100vw - 24px)); max-height: min(78vh, 720px); overflow: hidden; display: none; color: #eef4ff; background: #101827; border: 1px solid #394760; border-radius: 14px; box-shadow: 0 16px 48px #0009; font-size: 13px; }
+    .panel { position: fixed; z-index: 2147483646; top: 14px; left: 14px; width: min(318px, calc(100vw - 24px)); max-height: min(78vh, 720px); overflow: hidden; display: none; color: #eef4ff; background: #101827; border: 1px solid #394760; border-radius: 14px; box-shadow: 0 16px 48px #0009; font-size: 13px; }
     .panel.open { display: flex; flex-direction: column; }
     .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(120deg, #1d2a40, #172031); border-bottom: 1px solid #394760; }
     .header strong { display: block; font-size: 16px; letter-spacing: .1px; }
@@ -2198,22 +2129,15 @@
     .quiet-button { flex: 0 0 auto; border: 1px solid #52617a; border-radius: 8px; background: #25334a; color: #e9f1ff; padding: 0 9px; }
     .types { min-height: 26px; display: flex; align-items: center; gap: 6px; margin: 5px 0 8px; }
     .partner-details { margin: -3px 0 7px; line-height: 1.4; }
-    .coin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 3px 0 6px; padding: 6px 8px; border: 1px solid #344157; border-radius: 8px; background: #172235; color: #c9d6e9; font-size: 11px; }
-    .coin-row strong { color: #f5c76b; font-size: 12px; }
     .tm-budget { padding: 7px 8px; border: 1px solid #5b5035; border-radius: 8px; color: #f5d48e; background: #2a281f; font-size: 10px; line-height: 1.4; }
     .tm-help { margin: 2px 0 0; line-height: 1.4; }
-    .tm-action-row, .tm-target-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
-    .tm-action-row .quiet-button { min-height: 30px; }
-    .tm-action-row .muted { flex: 1; margin: 0; font-size: 10px; }
-    .tm-target-row input { flex: 1 1 auto; width: 100%; }
-    .tm-target-row .quiet-button { min-height: 34px; }
-    .tm-inventory { display: grid; gap: 4px; margin: 5px 0 8px; }
-    .tm-inventory-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 7px; border-radius: 7px; background: #172235; font-size: 10px; }
-    .tm-inventory-item span { color: #f5c76b; font-weight: 750; white-space: nowrap; }
-    .tm-candidate-row { display: flex; gap: 5px; margin: 5px 0 2px; }
-    .tm-candidate-row select { flex: 0 0 46%; width: 46%; min-width: 0; height: 34px; padding: 0 5px; font-size: 10px; }
-    .tm-candidate-row input { flex: 1 1 auto; width: 100%; min-width: 0; font-size: 10px; }
-    .tm-candidates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 3px 0 8px; }
+    .tm-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .tm-action-row .quiet-button { min-height: 32px; }
+    .tm-action-row .quiet-button:disabled { opacity: .48; cursor: not-allowed; }
+    .gacha-mode-list { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
+    .gacha-mode { justify-content: flex-start; margin: 2px 0; cursor: pointer; font-size: 10px; }
+    .gacha-mode span { display: flex; align-items: center; gap: 6px; }
+    .gacha-mode input { width: 14px; height: 14px; margin: 0; padding: 0; accent-color: #f5c76b; }
     .tm-source-links { display: flex; flex-wrap: wrap; gap: 5px 9px; margin: 5px 0 9px; font-size: 10px; line-height: 1.35; }
     .tm-source-links a, .tm-help a { color: #9cc4ff; text-decoration: underline; text-underline-offset: 2px; }
     .type-pill { border-radius: 999px; background: #31415c; color: #dceaff; padding: 3px 8px; font-size: 10px; font-weight: 700; }
@@ -2240,9 +2164,9 @@
     .build-level { color: #b8c9e1; white-space: nowrap; }
     .stat-history { margin: 3px 0 0; }
     .footnote { margin: 12px 0 0; padding-top: 9px; border-top: 1px solid #344157; color: #8796ad; font-size: 10px; line-height: 1.4; }
-    .fab { position: fixed; z-index: 2147483646; right: 14px; bottom: 16px; display: none; width: 42px; height: 42px; border: 2px solid #f5c76b; border-radius: 50%; background: #152137; color: #f5c76b; font-weight: 900; box-shadow: 0 5px 18px #0008; cursor: pointer; }
+    .fab { position: fixed; z-index: 2147483646; left: 14px; bottom: 16px; display: none; width: 42px; height: 42px; border: 2px solid #f5c76b; border-radius: 50%; background: #152137; color: #f5c76b; font-weight: 900; box-shadow: 0 5px 18px #0008; cursor: pointer; }
     .fab.visible { display: block; }
-    @media (max-width: 700px) { .panel { top: auto; bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); max-height: 55vh; } .fab { right: 10px; bottom: 10px; } }
+    @media (max-width: 700px) { .panel { top: auto; bottom: 10px; left: 10px; width: min(320px, calc(100vw - 20px)); max-height: 55vh; } .fab { left: 10px; bottom: 10px; } }
   `;
   const panelStyle = document.createElement("style");
   panelStyle.textContent = PANEL_CSS;

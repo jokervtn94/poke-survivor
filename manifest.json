@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.7",
-  "description": "Đọc Partner, PokéCoin và Túi TM; đối chiếu build tham khảo cho Pokémon.",
+  "version": "0.3.8",
+  "description": "Gợi ý TM cho Partner; tự xử lý Missions và Gacha sau mỗi ván.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [
