@@ -17,6 +17,7 @@
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
+  const EXTENSION_VERSION = "0.3.11";
   const AUTO_PICK_DELAY_MS = 1250;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
@@ -54,6 +55,8 @@
   let autoPickTimer = null;
   let autoPickSignature = "";
   let pendingAutoPickSignature = "";
+  let lastObservedLevelText = document.querySelector("#lvl-num")?.textContent?.trim() || "";
+  let levelUpSignalUntil = 0;
   let lastTrackedSelectionSignature = "";
   let lastTrackedSelectionAt = 0;
   let missionCheckTimer = null;
@@ -75,7 +78,7 @@
     <button id="psba-fab" class="fab" type="button" aria-label="Mở trợ lý build">PS</button>
     <aside id="psba-panel" class="panel" aria-label="PokéSurvivor Build Assistant">
       <header class="header">
-        <div><div class="eyebrow">POKÉ SURVIVOR</div><strong>Build Assistant</strong></div>
+        <div><div class="eyebrow">POKÉ SURVIVOR <span class="version">v${EXTENSION_VERSION}</span></div><strong>Build Assistant</strong></div>
         <button id="psba-minimize" class="icon-button" type="button" aria-label="Thu gọn">−</button>
       </header>
       <div class="body">
@@ -710,6 +713,8 @@
     autoPickTimer = null;
     pendingAutoPickSignature = "";
     autoPickSignature = "";
+    levelUpSignalUntil = 0;
+    lastObservedLevelText = "";
     lastTrackedSelectionSignature = "";
     lastTrackedSelectionAt = 0;
     state.learnedMoves = [];
@@ -948,11 +953,21 @@
   }
 
   function isLevelUpPromptVisible() {
+    refreshLevelUpSignal();
     if (isScreenVisible(document.querySelector("#scr-levelup"))) return true;
-    // Some game layouts collapse the cards container while its choice cards
-    // remain positioned and visible. Check the choices themselves instead of
-    // requiring the parent container to have a non-zero bounding box.
-    return cardNodes().filter((card) => isElementRendered(card) && Boolean((card.innerText || card.textContent || "").trim())).length >= 2;
+    const choicesWithText = cardNodes().filter((card) => Boolean((card.innerText || card.textContent || "").trim()));
+    if (choicesWithText.filter(isElementRendered).length >= 2) return true;
+    // The game updates lvl-num as it creates a new offer. Keep that signal
+    // briefly so cards can still be read if the parent overlay is collapsed.
+    return Date.now() < levelUpSignalUntil && choicesWithText.length >= 2;
+  }
+
+  function refreshLevelUpSignal() {
+    const currentLevelText = document.querySelector("#lvl-num")?.textContent?.trim() || "";
+    if (currentLevelText && currentLevelText !== lastObservedLevelText) {
+      lastObservedLevelText = currentLevelText;
+      levelUpSignalUntil = Date.now() + 8000;
+    }
   }
 
   function openMissionsFromGameMenu() {
@@ -1515,8 +1530,10 @@
   }
 
   function cardNodes() {
+    const screenChoices = Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
+    if (screenChoices.length >= 2) return screenChoices;
     const cardsRoot = document.querySelector("#cards") || document.querySelector("#scr-levelup .cards");
-    if (!cardsRoot) return Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
+    if (!cardsRoot) return screenChoices;
     const cardClassNodes = Array.from(cardsRoot.querySelectorAll(".card"));
     if (cardClassNodes.length >= 2) return cardClassNodes;
     const buttons = Array.from(cardsRoot.querySelectorAll('button, [role="button"]'));
@@ -1795,6 +1812,7 @@
     const best = candidates[0];
     ui.autoStatus.textContent = `Sẽ tự chọn hạng 1: ${best.move?.name || best.text.slice(0, 32)} (${best.score}đ).`;
     pendingAutoPickSignature = planSignature;
+    let usedShortcutFallback = false;
     attemptAutoPick(0);
 
     function attemptAutoPick(attempt) {
@@ -1823,8 +1841,13 @@
           || Boolean(currentCardsRoot?.querySelector(".selected, .chosen, [aria-selected='true'], [data-selected='true']"))
           || cardSelectionSignature() !== cardSignature;
         if (!accepted) {
+          if (!usedShortcutFallback) {
+            usedShortcutFallback = true;
+            pressGameChoiceShortcut(currentBest.choiceIndex);
+            ui.autoStatus.textContent = "Game chưa nhận click thẻ; đang gửi phím chọn tương ứng…";
+          }
           if (attempt < AUTO_PICK_MAX_RETRIES) {
-            ui.autoStatus.textContent = "Game chưa xác nhận lựa chọn; extension sẽ tự thử lại…";
+            if (!usedShortcutFallback) ui.autoStatus.textContent = "Game chưa xác nhận lựa chọn; extension sẽ tự thử lại…";
             pendingAutoPickSignature = planSignature;
             attemptAutoPick(attempt + 1);
           } else {
@@ -1833,6 +1856,7 @@
           return;
         }
         autoPickSignature = cardSignature;
+        levelUpSignalUntil = 0;
         trackGameSelection(currentBest);
         ui.autoStatus.textContent = `Đã tự chọn hạng 1: ${currentBest.move?.name || currentBest.text.slice(0, 32)} (${currentBest.score}đ).`;
         ui.status.textContent = `Game đã nhận thẻ phù hợp nhất cho ${state.pokemon || "Pokémon hiện tại"}.`;
@@ -1857,6 +1881,14 @@
     if (!card?.isConnected || card.matches(":disabled") || card.getAttribute("aria-disabled") === "true") return false;
     if (card.closest("[disabled], [aria-disabled='true'], .disabled, .locked, .unavailable")) return false;
     return getComputedStyle(card).pointerEvents !== "none";
+  }
+
+  function pressGameChoiceShortcut(choiceIndex) {
+    const number = Number(choiceIndex) + 1;
+    if (!Number.isInteger(number) || number < 1 || number > 3) return;
+    const eventInit = { key: String(number), code: `Digit${number}`, bubbles: true, cancelable: true };
+    window.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+    window.dispatchEvent(new KeyboardEvent("keyup", eventInit));
   }
 
   function fusionPairScore(moveA, moveB, pokemonOverride = null) {
@@ -2032,9 +2064,8 @@
 
   function onGameCardClick(event) {
     const target = event.target instanceof Element ? event.target : null;
-    const card = target?.closest("#cards .card") || target?.closest('#cards button, #cards [role="button"]') || target?.closest("#cards > *");
-    const cardsRoot = document.querySelector("#cards");
-    if (!card || !cardsRoot?.contains(card) || !event.isTrusted) return;
+    const card = target?.closest("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button'], #cards > *");
+    if (!card || !cardNodes().includes(card) || !event.isTrusted) return;
     stopAutoPickForManualChoice();
     trackGameSelection(candidateFromCard(card));
   }
@@ -2057,6 +2088,7 @@
     autoPickTimer = null;
     pendingAutoPickSignature = "";
     autoPickSignature = cardSelectionSignature();
+    levelUpSignalUntil = 0;
   }
 
   function trackGameSelection(candidate) {
@@ -2132,6 +2164,7 @@
     .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(120deg, #1d2a40, #172031); border-bottom: 1px solid #394760; }
     .header strong { display: block; font-size: 16px; letter-spacing: .1px; }
     .eyebrow { color: #f5c76b; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; margin-bottom: 2px; }
+    .version { color: #91a1b8; float: right; font-size: 8px; font-weight: 650; letter-spacing: .2px; }
     .icon-button, .quiet-button, .text-button, .chip { font: inherit; cursor: pointer; }
     .icon-button { width: 28px; height: 28px; border: 1px solid #53617a; border-radius: 8px; background: #27364b; color: white; font-size: 18px; line-height: 1; }
     .body { overflow: auto; padding: 12px; }
