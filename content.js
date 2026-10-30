@@ -322,7 +322,7 @@
   window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
     const rootsChanged = refreshObservedGameRoots(observer);
-    const visible = isScreenVisible(document.querySelector("#scr-levelup"));
+    const visible = isLevelUpPromptVisible();
     const fingerprint = `${visible}:${visible ? cardSelectionSignature() : ""}`;
     if (!rootsChanged && fingerprint === lastLevelUpPollFingerprint && visible === isLevelUpVisible) return;
     lastLevelUpPollFingerprint = fingerprint;
@@ -721,8 +721,7 @@
   }
 
   function updateLevelUpState() {
-    const screen = document.querySelector("#scr-levelup");
-    const visible = isScreenVisible(screen);
+    const visible = isLevelUpPromptVisible();
     lastLevelUpPollFingerprint = `${visible}:${visible ? cardSelectionSignature() : ""}`;
     if (visible !== isLevelUpVisible) {
       const wasVisible = isLevelUpVisible;
@@ -939,6 +938,20 @@
     if (!screen?.isConnected || screen.hidden || screen.classList.contains("hidden")) return false;
     const style = getComputedStyle(screen);
     return style.display !== "none" && style.visibility !== "hidden" && screen.getClientRects().length > 0;
+  }
+
+  function isElementRendered(element) {
+    if (!element?.isConnected || element.hidden) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }
+
+  function isLevelUpPromptVisible() {
+    if (isScreenVisible(document.querySelector("#scr-levelup"))) return true;
+    const cardsRoot = document.querySelector("#cards");
+    if (!isElementRendered(cardsRoot)) return false;
+    return cardNodes().filter(isElementRendered).length >= 2;
   }
 
   function openMissionsFromGameMenu() {
@@ -1331,7 +1344,7 @@
       return;
     }
     const fullBuildTmMoves = picks;
-    if (isScreenVisible(document.querySelector("#scr-levelup")) || isScreenVisible(document.querySelector("#scr-over"))) {
+    if (isLevelUpPromptVisible() || isScreenVisible(document.querySelector("#scr-over"))) {
       ui.tmStatus.textContent = "Hoàn tất màn hình trận đấu rồi áp dụng build TM từ menu hoặc Pokédex.";
       return;
     }
@@ -1783,9 +1796,8 @@
       autoPickTimer = setTimeout(() => {
         autoPickTimer = null;
         pendingAutoPickSignature = "";
-        const currentScreen = document.querySelector("#scr-levelup");
         const currentCandidates = rankCurrentCandidates();
-        if (!state.autoPick || !isLevelUpVisible || !isScreenVisible(currentScreen) || scoredCandidateSignature(currentCandidates) !== planSignature) return;
+        if (!state.autoPick || !isLevelUpVisible || !isLevelUpPromptVisible() || scoredCandidateSignature(currentCandidates) !== planSignature) return;
         const currentBest = currentCandidates[0];
         if (!currentBest?.element?.isConnected) return;
         if (!isGameCardReady(currentBest.element)) {
@@ -1801,7 +1813,7 @@
 
         currentBest.element.click();
         const currentCardsRoot = document.querySelector("#cards");
-        const accepted = !isScreenVisible(currentScreen)
+        const accepted = !isLevelUpPromptVisible()
           || currentCardsRoot?.classList.contains("done")
           || Boolean(currentCardsRoot?.querySelector(".selected, .chosen, [aria-selected='true'], [data-selected='true']"))
           || cardSelectionSignature() !== cardSignature;

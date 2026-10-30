@@ -1,4 +1,4 @@
-# PokéSurvivor Build Assistant 0.3.8
+# PokéSurvivor Build Assistant 0.3.9
 
 Extension Chrome/Edge Manifest V3 hỗ trợ theo dõi lượt chơi, đề xuất build skill, đọc Partner/TM và quản lý một số thao tác trong game **[pokesurvivor.com](https://pokesurvivor.com/)**. Tác giả: **Jokervtn94**.
 
@@ -37,6 +37,10 @@ Sau khi cập nhật mã nguồn, nhấn **Reload** ở trang Extensions rồi t
 ## Quyền riêng tư
 
 Extension lưu tùy chọn build và dữ liệu tham khảo công khai trong `chrome.storage.local`. Tên Partner được dùng để tải trang build công khai; nội dung Túi TM chỉ được đọc trong trang game và lưu trong bộ nhớ cho tới khi đóng trang. Extension không đọc PokéCoin hoặc Shop.
+
+## Bản 0.3.9
+
+- Sửa nhận diện màn lên cấp khi game báo lớp bao ẩn nhưng các thẻ trong vùng cards đang hiển thị; tiếp tục gợi ý và tự chọn thẻ điểm cao nhất.
 
 ## Bản 0.3.8
 
