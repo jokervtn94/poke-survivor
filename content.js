@@ -140,8 +140,8 @@
         <p id="psba-item-status" class="muted auto-status">Đang ưu tiên hiệu quả cho Partner/build hiện tại.</p>
 
         <div class="section-title"><span>Né boss ở Vách Nứt</span><small>thử nghiệm</small></div>
-        <label class="auto-pick-row"><span><input id="psba-auto-dodge" type="checkbox"> Tự né dải cảnh báo</span></label>
-        <p id="psba-dodge-status" class="muted auto-status">Chỉ bật trong Vách Nứt. Nhận diện dải hồng giao nhau và gửi một nhịp né mỗi đợt.</p>
+        <label class="auto-pick-row"><span><input id="psba-auto-dodge" type="checkbox"> Tự né cảnh báo boss</span></label>
+        <p id="psba-dodge-status" class="muted auto-status">Chỉ bật trong Vách Nứt. Nhận diện vùng màu nổi bật dạng dải dài hoặc vòng tròn.</p>
 
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
@@ -232,7 +232,7 @@
     dodgeThreatHandled = false;
     dodgeManualPauseUntil = 0;
     if (autoDodgeEnabled) {
-      ui.dodgeStatus.textContent = "Đang theo dõi cảnh báo dạng dải. Chỉ bật trong Vách Nứt.";
+      ui.dodgeStatus.textContent = "Đang theo dõi cảnh báo nhiều màu, dạng dải hoặc vòng tròn.";
       startDodgeMonitor();
     } else {
       stopDodgeMonitor();
@@ -990,43 +990,49 @@
       return;
     }
 
-    const analysis = analyzePinkWarningLines(imageData);
+    const analysis = analyzeRiftWarnings(imageData);
     if (!analysis || !analysis.focus) {
       if (!dodgeThreatMissingAt) dodgeThreatMissingAt = Date.now();
       if (Date.now() - dodgeThreatMissingAt > 650) dodgeThreatHandled = false;
       releaseDodgeKeys();
-      ui.dodgeStatus.textContent = analysis?.pinkPixels > 80
-        ? "Có hiệu ứng hồng nhưng chưa nhận diện được dải cảnh báo giao nhau."
-        : "Đang chờ dải cảnh báo hồng của boss.";
+      ui.dodgeStatus.textContent = analysis?.colorPixels > 80
+        ? "Có vùng màu nổi bật nhưng chưa khớp hình dải dài hoặc vòng tròn cảnh báo."
+        : "Đang chờ cảnh báo hình học của boss.";
       return;
     }
     dodgeThreatMissingAt = 0;
 
     if (!dodgeThreatHandled) {
-      const direction = chooseDodgeDirection(analysis.mask, analysis.width, analysis.height, analysis.focus);
-      if (!direction || direction.score > 0.62) {
-        ui.dodgeStatus.textContent = "Đã thấy dải cảnh báo nhưng chưa có hướng né đủ thoáng; chưa gửi lệnh di chuyển.";
+      const direction = chooseDodgeDirection(analysis.mask, analysis.width, analysis.height, analysis.focus, analysis.radius);
+      const maxRisk = analysis.kind === "circle" ? 1.25 : 0.82;
+      if (!direction || direction.score > maxRisk) {
+        ui.dodgeStatus.textContent = "Đã thấy vùng cảnh báo nhưng chưa đủ tin cậy để gửi lệnh di chuyển.";
         return;
       }
       dodgeThreatHandled = true;
-      pressDodgeDirection(direction);
-      ui.dodgeStatus.textContent = "Đã phát hiện dải cảnh báo giao nhau; gửi một nhịp né " + direction.label + ".";
+      pressDodgeDirection(direction, analysis.kind === "circle" ? 340 : 260);
+      const shapeLabel = analysis.kind === "circle" ? "vòng tròn" : analysis.kind === "mixed" ? "dải và vòng" : "dải dài";
+      ui.dodgeStatus.textContent = "Đã nhận diện cảnh báo dạng " + shapeLabel + "; gửi một nhịp né " + direction.label + ".";
       return;
     }
 
-    ui.dodgeStatus.textContent = "Đang theo dõi dải cảnh báo; đã gửi một nhịp né cho đợt hiện tại.";
+    ui.dodgeStatus.textContent = "Đang theo dõi cảnh báo dạng " + (analysis.kind === "circle" ? "vòng tròn" : analysis.kind === "mixed" ? "dải và vòng" : "dải dài") + "; đã gửi một nhịp né cho đợt hiện tại.";
   }
 
-  function analyzePinkWarningLines(imageData) {
+  function analyzeRiftWarnings(imageData) {
     const step = Math.max(3, Math.ceil(Math.max(imageData.width, imageData.height) / 320));
     const width = Math.ceil(imageData.width / step);
     const height = Math.ceil(imageData.height / step);
     const mask = new Uint8Array(width * height);
+    const hueMap = new Uint8Array(width * height);
     const points = [];
     const data = imageData.data;
-    let pinkPixels = 0;
+    let colorPixels = 0;
+    const topHudRows = Math.floor(height * 0.13);
+    const bottomHudRows = Math.floor(height * 0.12);
 
     for (let gy = 0; gy < height; gy += 1) {
+      if (gy < topHudRows || gy >= height - bottomHudRows) continue;
       const y = Math.min(imageData.height - 1, gy * step + Math.floor(step / 2));
       for (let gx = 0; gx < width; gx += 1) {
         const x = Math.min(imageData.width - 1, gx * step + Math.floor(step / 2));
@@ -1034,20 +1040,186 @@
         const red = data[offset];
         const green = data[offset + 1];
         const blue = data[offset + 2];
-        if (red >= 88 && red - green >= 28 && red - blue >= 10 && green < 176 && blue < 208) {
+        const maximum = Math.max(red, green, blue);
+        const minimum = Math.min(red, green, blue);
+        const chroma = maximum - minimum;
+        const saturation = maximum ? chroma / maximum : 0;
+        if (maximum >= 72 && chroma >= 24 && saturation >= 0.18) {
           const index = gy * width + gx;
           mask[index] = 1;
+          hueMap[index] = hueBucket(red, green, blue);
           points.push({ x: gx, y: gy });
-          pinkPixels += 1;
+          colorPixels += 1;
         }
       }
     }
 
-    if (points.length < 90) return { mask, width, height, pinkPixels, focus: null };
+    if (points.length < 90) return { mask, width, height, colorPixels, focus: null };
+    const componentData = findWarningComponents(mask, hueMap, width, height);
+    const components = componentData.components;
     const lines = houghWarningLines(points, width, height);
-    if (lines.length < 4) return { mask, width, height, pinkPixels, focus: null };
-    const focus = intersectingLineFocus(lines, width, height);
-    return { mask, width, height, pinkPixels, focus };
+    const lineFocus = lines.length >= 4 ? intersectingLineFocus(lines, width, height) : null;
+    const hasFan = Boolean(lineFocus && isConvergingWarningFan(lines, lineFocus, width, height));
+    const longWarnings = components.filter((component) => component.kind === "line");
+    const circleWarnings = components.filter((component) => component.kind === "circle");
+    const largestLine = [...longWarnings].sort((a, b) => b.area - a.area)[0];
+    const largestCircle = [...circleWarnings].sort((a, b) => b.area - a.area)[0];
+    let focus = hasFan ? lineFocus : null;
+    let kind = "";
+    let radius = 0;
+    let warningMask = mask;
+
+    if (focus) {
+      kind = largestCircle ? "mixed" : "line";
+    } else if (largestLine) {
+      focus = largestLine.center;
+      kind = largestCircle ? "mixed" : "line";
+    }
+    if (!focus && largestCircle) {
+      focus = largestCircle.center;
+      radius = largestCircle.radius;
+      kind = "circle";
+      warningMask = componentMask(componentData.labels, circleWarnings.map((component) => component.id));
+    } else if (largestCircle) {
+      radius = Math.max(...circleWarnings.map((component) => component.radius));
+    }
+
+    if (!focus) return { mask, width, height, colorPixels, focus: null };
+    return { mask: warningMask, width, height, colorPixels, focus, kind, radius };
+  }
+
+  function isConvergingWarningFan(lines, focus, width, height) {
+    const tolerance = Math.max(7, Math.min(width, height) * 0.065);
+    const angles = [];
+    for (const line of lines) {
+      const radians = line.angle * Math.PI / 180;
+      const distance = Math.abs(focus.x * Math.cos(radians) + focus.y * Math.sin(radians) - line.rho);
+      if (distance > tolerance) continue;
+      if (!angles.some((angle) => Math.abs(angle - line.angle) <= 9)) angles.push(line.angle);
+    }
+    return angles.length >= 3;
+  }
+
+  function hueBucket(red, green, blue) {
+    const maximum = Math.max(red, green, blue);
+    const minimum = Math.min(red, green, blue);
+    const delta = maximum - minimum;
+    if (!delta) return 0;
+    let hue;
+    if (maximum === red) hue = ((green - blue) / delta) % 6;
+    else if (maximum === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue = ((hue * 60) + 360) % 360;
+    return Math.floor(hue / 30) % 12;
+  }
+
+  function findWarningComponents(mask, hueMap, width, height) {
+    const size = width * height;
+    const expanded = new Uint8Array(size);
+    const labels = new Int32Array(size);
+    const queue = new Int32Array(size);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = y * width + x;
+        if (!mask[index]) continue;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= height) continue;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const nx = x + dx;
+            if (nx >= 0 && nx < width) expanded[ny * width + nx] = 1;
+          }
+        }
+      }
+    }
+
+    const components = [];
+    let nextId = 0;
+    for (let start = 0; start < size; start += 1) {
+      if (!expanded[start] || labels[start]) continue;
+      const id = ++nextId;
+      let head = 0;
+      let tail = 0;
+      queue[tail++] = start;
+      labels[start] = id;
+      let area = 0;
+      let minX = width;
+      let maxX = -1;
+      let minY = height;
+      let maxY = -1;
+      let sumX = 0;
+      let sumY = 0;
+
+      while (head < tail) {
+        const index = queue[head++];
+        const x = index % width;
+        const y = Math.floor(index / width);
+        area += 1;
+        sumX += x;
+        sumY += y;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= height) continue;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const nx = x + dx;
+            if (nx < 0 || nx >= width) continue;
+            const neighbor = ny * width + nx;
+            if (expanded[neighbor] && !labels[neighbor]) {
+              labels[neighbor] = id;
+              queue[tail++] = neighbor;
+            }
+          }
+        }
+      }
+
+      const boxWidth = maxX - minX + 1;
+      const boxHeight = maxY - minY + 1;
+      const shortSide = Math.min(boxWidth, boxHeight);
+      const longSide = Math.max(boxWidth, boxHeight);
+      const aspect = longSide / Math.max(1, shortSide);
+      const fillRatio = area / Math.max(1, boxWidth * boxHeight);
+      const roughLine = longSide >= Math.max(24, Math.min(width, height) * 0.22) && aspect >= 2.35 && area >= 28;
+      const roughCircle = shortSide >= 13 && aspect <= 1.58 && area >= 34 && fillRatio >= 0.055 && fillRatio <= 0.98;
+      if (!roughLine && !roughCircle) continue;
+
+      const hueCounts = new Uint16Array(12);
+      let sourcePixels = 0;
+      for (let y = minY; y <= maxY; y += 1) {
+        for (let x = minX; x <= maxX; x += 1) {
+          const index = y * width + x;
+          if (labels[index] !== id || !mask[index]) continue;
+          hueCounts[hueMap[index]] += 1;
+          sourcePixels += 1;
+        }
+      }
+      if (sourcePixels < (roughCircle ? 22 : 18)) continue;
+      const dominantHue = Math.max(...hueCounts) / sourcePixels;
+      if (dominantHue < (roughCircle ? 0.48 : 0.32)) continue;
+
+      const kind = roughLine ? "line" : "circle";
+      components.push({
+        id,
+        kind,
+        area,
+        radius: longSide / 2,
+        center: { x: sumX / area, y: sumY / area },
+        dominantHue
+      });
+    }
+    return { components, labels };
+  }
+
+  function componentMask(labels, ids) {
+    const mask = new Uint8Array(labels.length);
+    const includedIds = new Set(ids);
+    for (let index = 0; index < labels.length; index += 1) {
+      if (includedIds.has(labels[index])) mask[index] = 1;
+    }
+    return mask;
   }
 
   function houghWarningLines(points, width, height) {
@@ -1146,7 +1318,7 @@
     };
   }
 
-  function chooseDodgeDirection(mask, width, height, focus) {
+  function chooseDodgeDirection(mask, width, height, focus, radius = 0) {
     const directions = [
       { x: 0, y: -1, label: "lên", keys: ["w"] },
       { x: 1, y: -1, label: "lên-phải", keys: ["w", "d"] },
@@ -1157,7 +1329,10 @@
       { x: -1, y: 0, label: "trái", keys: ["a"] },
       { x: -1, y: -1, label: "lên-trái", keys: ["w", "a"] }
     ];
-    const searchDistance = Math.max(18, Math.min(width, height) * 0.27);
+    const searchDistance = Math.min(
+      Math.max(18, Math.min(width, height) * 0.27, radius + 8),
+      Math.min(width, height) * 0.8
+    );
     const corridor = Math.max(2, Math.round(Math.min(width, height) * 0.025));
     let best = null;
 
@@ -1189,12 +1364,12 @@
     return best;
   }
 
-  function pressDodgeDirection(direction) {
+  function pressDodgeDirection(direction, pulseMs = DODGE_MOVE_PULSE_MS) {
     releaseDodgeKeys();
     dodgeHeldKeys = [...direction.keys];
     for (const key of dodgeHeldKeys) dispatchMovementKey("keydown", key);
     if (dodgeMoveTimer) clearTimeout(dodgeMoveTimer);
-    dodgeMoveTimer = setTimeout(releaseDodgeKeys, DODGE_MOVE_PULSE_MS);
+    dodgeMoveTimer = setTimeout(releaseDodgeKeys, pulseMs);
   }
 
   function dispatchMovementKey(type, key) {
