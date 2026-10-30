@@ -1,67 +1,48 @@
-# PokéSurvivor Build Assistant 0.3.15
+# PokéSurvivor Build Assistant 0.3.2
 
-Extension Chrome/Edge Manifest V3 hỗ trợ theo dõi lượt chơi, đề xuất build skill, đọc Partner/TM và quản lý một số thao tác trong game **[pokesurvivor.com](https://pokesurvivor.com/)**. Tác giả: **Jokervtn94**.
+Extension Chrome/Edge Manifest V3 hỗ trợ xếp hạng thẻ lên cấp theo Pokémon và các skill đã học, theo dõi build trong lượt chơi, gợi ý phối hợp Bond và tự chọn thẻ khi đạt điều kiện. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải ZIP phát hành và giải nén, hoặc tải mã nguồn repo này.
+1. Tải ZIP v0.3.2 và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
-5. Mở hoặc tải lại `https://pokesurvivor.com/`. Mở bảng **Build Assistant** ở góc trái.
+5. Mở hoặc tải lại [pokesurvivor.com](https://pokesurvivor.com/).
 
-Sau khi cập nhật mã nguồn, nhấn **Reload** ở trang Extensions rồi tải lại thẻ game.
+Sau khi cài, mở bảng **Build Assistant** trong game. Nếu Pokémon không được nhận diện, hãy tìm và chọn Pokémon thủ công trong bảng.
 
-## Chức năng và cách sử dụng
+## Chức năng của v0.3.2
 
-| Chức năng | Cách sử dụng | Extension xử lý |
-|---|---|---|
-| Nhận diện Pokémon Partner | Mở bảng khi đang ở menu game; nếu chưa đồng bộ, nhấn **Đồng bộ**. Có thể nhập tên Pokémon thủ công. | Đọc tên, hệ và độ hiếm Partner từ giao diện game; dùng lựa chọn thủ công khi không nhận diện được. |
-| Chọn hướng build | Chọn **Cân bằng**, **Ưu tiên tiến hóa**, **Thiên vật lý**, **Thiên đặc biệt** hoặc **Sinh tồn**. Thêm skill muốn nhắm tới trong mục **Skill muốn nhắm tới**. | Dùng Pokémon, chiến lược và skill mục tiêu để xếp hạng thẻ lên cấp. |
-| Gợi ý thẻ lên cấp | Đợi màn hình chọn thẻ xuất hiện. Bảng hiển thị tối đa ba gợi ý và lý do/điểm số; có thể chọn thẻ thủ công bằng chuột hoặc phím `1`–`3`. | Ưu tiên tiến hóa, skill mục tiêu, chỉ số cần thiết và skill phối hợp với các move đã học. |
-| Tự chọn thẻ | Bật **Tự chọn thẻ điểm cao nhất**. Tùy chọn bật mặc định; có thể tắt nếu chỉ muốn xem gợi ý. | Tự bấm thẻ điểm cao nhất. Nếu hòa điểm hoặc move chưa có dữ liệu phân tích, ưu tiên theo thứ tự thẻ trên màn hình và vẫn tự chọn hạng 1. Không yêu cầu người chơi click thẻ. Chờ game mở khóa và tự thử lại nếu game chưa nhận lựa chọn. |
-| Theo dõi skill trong lượt | Chọn thẻ trong game như bình thường; thêm move khởi đầu hoặc move đã có bằng ô **Ghi nhận move khởi đầu** và cấp skill hiện tại. | Ghi nhận lựa chọn bằng click/phím, tính phối hợp giữa các skill và gợi ý ghép Bond. Theo dõi tối đa 16 move qua 4 ô skill; sau khi ghép Bond, nhấn **Đánh dấu đã ghép** trên cặp tương ứng. |
-| Reset sau khi Pokémon bị hạ | Không cần thao tác. | Khi nhận diện màn hình kết thúc lượt, xóa skill, chỉ số và cấp độ đã theo dõi; giữ Pokémon, chiến lược và skill mục tiêu cho lượt sau. Có thể dùng **Xóa lượt** để reset thủ công. |
-| Kiểm tra và nhận thưởng Mission sau trận | Bật **Tự kiểm tra và nhận thưởng**. | Khi Pokémon bị hạ, tự về menu, mở Missions, nhận lần lượt các thưởng sẵn sàng rồi quay lại menu. Tắt nút để dừng tự nhận. |
-| Auto Gacha sau trận | Bật **Tự quay khi kết thúc ván**, rồi chọn một hoặc nhiều chế độ: 10/100 lượt bằng vé thường hoặc vé ×10. | Sau Missions, dùng các chế độ đã bật khi nút quay còn đủ vé; xử lý màn kết quả rồi tiếp tục cho tới khi các chế độ hết vé và trở về menu. Có giới hạn an toàn 200 batch cho mỗi chế độ. |
-| Build TM cho Partner | Nhấn **Tải build** hoặc chờ extension nhận diện Partner. Mở Túi trong game để đọc số TM đang sở hữu. | Đọc build tham khảo cho Partner hiện tại, xếp hạng tối đa ba TM tương thích và báo số lượng. **Sao chép build** chép danh sách; **Dạy TM tự động** mở Pokédex, bỏ qua move đã mở khóa, kiểm tra đủ TM còn thiếu rồi lần lượt dạy. Mỗi TM dạy mở khóa move vĩnh viễn cho Partner trong pool move của game. Không quét PokéCoin hay Shop. |
+- **Gợi ý thẻ lên cấp:** đọc các thẻ trong màn hình chọn thưởng, xếp hạng theo Pokémon, hướng build và skill đã học; hiển thị tối đa ba gợi ý.
+- **Tự chọn thẻ dẫn điểm:** bật sẵn. Extension chờ 750 ms để game mở khóa thẻ rồi tự bấm thẻ đứng đầu nếu thẻ đó đạt trên 6 điểm và dẫn điểm nghiêm ngặt so với thẻ kế tiếp. Nếu điểm hòa hoặc điều kiện chưa đạt, extension không tự chọn và người chơi có thể chọn thủ công.
+- **Theo dõi skill trong lượt:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`. Có thể thêm skill khởi đầu/đã sở hữu cùng cấp hiện tại để tính điểm phối hợp chính xác hơn.
+- **Đề xuất hướng build:** ưu tiên tiến hóa sẵn sàng, skill mục tiêu, thẻ chỉ số hỗ trợ công thức tiến hóa và các move bổ trợ cho skill đã học.
+- **Gợi ý phối hợp Bond:** phân tích nhóm move đã ghi nhận để gợi ý cặp phối hợp; sau khi dùng Bond, có thể đánh dấu cặp đã ghép trong bảng.
+- **Nhận diện Pokémon:** đọc tên Partner từ giao diện menu game; có thể tìm Pokémon thủ công nếu không nhận diện được.
+- **Reset lượt khi Pokémon bị hạ:** khi game hiện màn hình kết thúc lượt (`#scr-over`), xóa skill, thẻ chỉ số và cấp độ của lượt đó, đồng thời giữ Pokémon, hướng build và skill mục tiêu.
 
-## Nguồn dữ liệu và giới hạn
+## Cách dùng tự chọn thẻ
 
-- Build tham khảo lấy từ [PokéSurvivor Wiki](https://pokesurvivors.org/builds/), hiện có trang cho 966 Pokémon. Wiki ghi rõ build là đề xuất tạo theo quy tắc, không phải bảng xếp hạng tỷ lệ thắng; snapshot dữ liệu trên trang ghi ngày 2026-10-19.
-- Tương thích TM tham khảo từ [TM Compatibility Checker](https://pokemonsurvivorwiki.com/tm-compatibility/) và snapshot dữ liệu game. Bảng được dùng để khóa nút dạy TM khi không xác nhận tương thích.
-- [Hướng dẫn và bảng tính cộng đồng trên Steam](https://steamcommunity.com/sharedfiles/filedetails/?id=3819633059) là nguồn tham khảo bổ sung; nội dung có thể thay đổi theo phiên bản game.
-- Điểm gợi ý là heuristic minh bạch, không đọc HP, đối thủ, thời tiết hoặc trạng thái ẩn. Gợi ý Bond là đánh giá phối hợp chiến thuật, không khẳng định đó là công thức ghép đặc biệt của game.
-- Nếu tên move trong game chưa khớp danh mục tiếng Anh, extension có thể không xếp hạng được thẻ đó hoặc đánh giá với độ tin cậy thấp.
+Giữ bật **Tự chọn thẻ dẫn điểm** trong bảng extension. Khi lên cấp, chờ bảng gợi ý hiện trạng thái đang xử lý. Extension chỉ tự bấm khi thẻ tốt nhất đạt **trên 6 điểm** và hơn điểm thẻ thứ hai. Điểm hòa, thẻ chưa đủ điểm hoặc game chưa mở khóa thẻ sẽ không kích hoạt tự chọn trong v0.3.2.
+
+## Giới hạn
+
+Điểm gợi ý là heuristic dựa trên dữ liệu Pokémon/move công khai và nội dung thẻ. Extension không đọc HP, đối thủ, thời tiết hoặc trạng thái ẩn của game. Nếu tên thẻ trong game không khớp dữ liệu move tiếng Anh, thẻ có thể được xếp hạng với độ tin cậy thấp. Game có thể thay đổi cấu trúc DOM và làm hỏng nhận diện thẻ.
+
+v0.3.2 không có các chức năng tự kiểm tra/nhận thưởng Missions, Auto Gacha, quét Shop/PokeCoin/TM hoặc đề xuất và dạy TM cho Partner.
 
 ## Quyền riêng tư
 
-Extension lưu tùy chọn build và dữ liệu tham khảo công khai trong `chrome.storage.local`. Tên Partner được dùng để tải trang build công khai; nội dung Túi TM chỉ được đọc trong trang game và lưu trong bộ nhớ cho tới khi đóng trang. Extension không đọc PokéCoin hoặc Shop.
+Extension lưu tùy chọn Pokémon/hướng build và dữ liệu tham khảo công khai trong `chrome.storage.local`. Dữ liệu lượt chơi được xử lý trong trình duyệt để đề xuất thẻ. Extension chỉ chạy trên `pokesurvivor.com`.
 
-## Bản 0.3.15
-
-- Lấy luồng nhận diện màn lên cấp, đọc `#cards` và chọn thẻ của v0.3.2 làm nền đã được người chơi xác nhận hoạt động.
-- Giữ các chức năng được bổ sung sau v0.3.2: nhận diện Partner, theo dõi skill/Bond, reset lượt, tự nhận Missions sau trận, Auto Gacha và gợi ý/dạy TM cho Partner.
-- Auto-pick luôn chọn thẻ hạng 1 theo điểm; nếu bằng điểm thì chọn theo thứ tự thẻ của game, không yêu cầu click thủ công.
-- Loại các gói phát hành lỗi khỏi thư mục `releases`; chỉ giữ bản nền v0.3.2 và bản hợp nhất v0.3.15.
-
-## Nền ổn định v0.3.2
-
-v0.3.2 là bản nền cho detector và cách đọc thẻ lên cấp. Gói gốc được giữ trong `releases` để có thể cài lại khi cần.
-
-### Giới hạn xếp hạng TM
-
-Nguồn Builds tham khảo hiện cung cấp một bộ build cho mỗi Pokémon và không công bố số lượt đề xuất để xếp hạng ba bộ build riêng biệt. Extension vì vậy xếp tối đa ba TM ưu tiên trong bộ build đó theo hệ Pokémon, tương thích và heuristic build hiện có; không gắn nhãn đây là ba build phổ biến nhất.
 ## Tham chiếu
 
 - https://pokesurvivor.com/en/guide/
 - https://pokesurvivor.com/en/pokedex/
 - https://pokesurvivor.com/en/moves/
-- https://pokesurvivors.org/builds/
-- https://pokemonsurvivorwiki.com/tm-compatibility/
-- https://steamcommunity.com/sharedfiles/filedetails/?id=3819633059
 - https://github.com/JPTER78/pokesurvivor
 
 ## Bản quyền
 
-Mã nguồn extension được phát hành theo MIT License (xem [LICENSE](LICENSE)). Đây là dự án companion không chính thức, không liên kết với PokéSurvivor, Nintendo, GAME FREAK hoặc The Pokémon Company. Game và nội dung Pokémon thuộc quyền sở hữu của các chủ sở hữu tương ứng; extension không đóng gói mã nguồn game, sprite hoặc nhạc.
+Mã nguồn extension được phát hành theo MIT License (xem [LICENSE](LICENSE)). Đây là dự án companion không chính thức, không liên kết với PokéSurvivor, Nintendo, GAME FREAK hoặc The Pokémon Company. Extension không đóng gói mã nguồn game, sprite hoặc nhạc.
