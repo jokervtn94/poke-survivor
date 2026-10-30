@@ -9,6 +9,7 @@
   const AUTO_PICK_MIN_SCORE = 6;
   const AUTO_PICK_NEAR_TIE_GAP = 6;
   const AUTO_PICK_DELAY_MS = 750;
+  const AUTO_BOND_DELAY_MS = 500;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const STRATEGIES = {
     balanced: "Cân bằng",
@@ -24,6 +25,7 @@
     strategy: "balanced",
     autoPick: true,
     autoBuildFromMoveset: false,
+    autoBondFromMoveset: false,
     targets: [],
     partnerBuild: null,
     learnedMoves: [],
@@ -41,6 +43,14 @@
   let autoPickTimer = null;
   let autoPickSignature = "";
   let pendingAutoPickSignature = "";
+  let isBondVisible = false;
+  let bondAutoTimer = null;
+  let bondWatchdogTimer = null;
+  let bondAttemptSignature = "";
+  let bondPendingFirstMove = "";
+  let bondPendingSecondMove = "";
+  let bondPendingStartedAt = 0;
+  let bondManualOverride = false;
   let lastBuildFetchPokemon = "";
   let buildFetchInFlight = "";
   let lastTrackedSelectionSignature = "";
@@ -101,6 +111,8 @@
           <button id="psba-add-known" class="quiet-button" type="button">Thêm</button>
         </div>
         <div class="section-title"><span>Gợi ý ghép Bond</span><small id="psba-bond-count">cần 2 skill</small></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-bond" type="checkbox" disabled> Tự chọn Bond theo move set</span></label>
+        <p id="psba-bond-status" class="muted auto-status">Tải move set Partner để bật tự chọn Bond.</p>
         <div id="psba-fusions" class="recommendations"><p class="muted">Học thêm skill để xem các cặp kết hợp.</p></div>
         <p class="footnote">Extension tự ghi nhận thẻ bạn chọn. Tự chọn có thể tắt bất cứ lúc nào; gợi ý Bond là đánh giá chiến thuật, không phải công thức đặc biệt của game.</p>
       </div>
@@ -119,6 +131,8 @@
     autoStatus: shadow.querySelector("#psba-auto-status"),
     autoBuild: shadow.querySelector("#psba-auto-build"),
     buildModeStatus: shadow.querySelector("#psba-build-mode-status"),
+    autoBond: shadow.querySelector("#psba-auto-bond"),
+    bondStatus: shadow.querySelector("#psba-bond-status"),
     loadMoveset: shadow.querySelector("#psba-load-moveset"),
     moveset: shadow.querySelector("#psba-moveset"),
     targetInput: shadow.querySelector("#psba-target-input"),
@@ -161,6 +175,19 @@
     renderPartnerBuild();
     refreshRecommendations();
   });
+  ui.autoBond.addEventListener("change", () => {
+    state.autoBondFromMoveset = Boolean(ui.autoBond.checked && hasPartnerBuildForCurrentPokemon());
+    ui.autoBond.checked = state.autoBondFromMoveset;
+    if (bondAutoTimer) clearTimeout(bondAutoTimer);
+    bondAutoTimer = null;
+    bondAttemptSignature = "";
+    bondManualOverride = false;
+    persistState();
+    ui.bondStatus.textContent = state.autoBondFromMoveset
+      ? "Đang chờ Bond; dùng cặp trong build hoặc chấm phối hợp các move của Partner."
+      : "Tắt tự chọn Bond; bạn vẫn có thể xem gợi ý và ghép thủ công.";
+    updateBondState();
+  });
   ui.loadMoveset.addEventListener("click", () => loadPartnerMoveset(true));
   shadow.querySelector("#psba-add-target").addEventListener("click", addTarget);
   shadow.querySelector("#psba-add-known").addEventListener("click", addKnownMove);
@@ -180,14 +207,17 @@
   ui.autoPick.checked = state.autoPick;
 
   const cardsRoot = document.querySelector("#cards");
+  const bondCardsRoot = document.querySelector("#bond-cards");
   cardsRoot.addEventListener("click", onGameCardClick, true);
+  bondCardsRoot?.addEventListener("click", onGameBondCardClick, true);
   document.addEventListener("keydown", onGameLevelUpKeydown, true);
   const observer = new MutationObserver(() => {
     observePartnerName();
     updateLevelUpState();
+    updateBondState();
     updateGameOverState();
   });
-  for (const selector of ["#cards", "#scr-levelup", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
+  for (const selector of ["#cards", "#scr-levelup", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
     const element = document.querySelector(selector);
     if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move"] });
   }
@@ -197,6 +227,7 @@
   loadReferenceData();
   observePartnerName();
   updateLevelUpState();
+  updateBondState();
   updateGameOverState();
 
   function normalize(value) {
@@ -218,12 +249,14 @@
       strategy: state.strategy,
       autoPick: state.autoPick,
       autoBuildFromMoveset: state.autoBuildFromMoveset,
+      autoBondFromMoveset: state.autoBondFromMoveset,
       targets: [...state.targets],
       partnerBuild: state.partnerBuild ? {
         pokemon: state.partnerBuild.pokemon,
         url: state.partnerBuild.url,
         moves: state.partnerBuild.moves.map((move) => ({ ...move })),
-        cardPriority: [...state.partnerBuild.cardPriority]
+        cardPriority: [...state.partnerBuild.cardPriority],
+        bondGroups: state.partnerBuild.bondGroups.map((group) => [...group])
       } : null,
       learnedMoves: state.learnedMoves.map((move) => ({ ...move })),
       fusedGroups: state.fusedGroups.map((group) => [...group]),
@@ -242,6 +275,7 @@
         state.strategy = Object.prototype.hasOwnProperty.call(STRATEGIES, value.strategy) ? value.strategy : "balanced";
         state.autoPick = value.autoPick === undefined ? true : Boolean(value.autoPick);
         state.autoBuildFromMoveset = Boolean(value.autoBuildFromMoveset);
+        state.autoBondFromMoveset = Boolean(value.autoBondFromMoveset);
         state.targets = Array.isArray(value.targets) ? value.targets.filter((item) => typeof item === "string") : [];
         state.partnerBuild = value.partnerBuild && typeof value.partnerBuild.pokemon === "string" && Array.isArray(value.partnerBuild.moves)
           ? {
@@ -254,6 +288,9 @@
               })),
               cardPriority: Array.isArray(value.partnerBuild.cardPriority)
                 ? value.partnerBuild.cardPriority.filter((item) => typeof item === "string").slice(0, 8)
+                : [],
+              bondGroups: Array.isArray(value.partnerBuild.bondGroups)
+                ? value.partnerBuild.bondGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, 4)
                 : []
             }
           : null;
@@ -263,7 +300,10 @@
           : [];
         state.statPicks = Array.isArray(value.statPicks) ? value.statPicks.filter((item) => typeof item === "string").slice(-12) : [];
         state.lastLevel = Number.isFinite(Number(value.lastLevel)) ? Number(value.lastLevel) : 0;
-        if (!hasPartnerBuildForCurrentPokemon()) state.autoBuildFromMoveset = false;
+        if (!hasPartnerBuildForCurrentPokemon()) {
+          state.autoBuildFromMoveset = false;
+          state.autoBondFromMoveset = false;
+        }
       }
       syncUiFromState();
       loadPartnerMovesetIfNeeded();
@@ -372,6 +412,7 @@
       clearRunTracker();
       state.partnerBuild = null;
       state.autoBuildFromMoveset = false;
+      state.autoBondFromMoveset = false;
       lastBuildFetchPokemon = "";
     }
     state.pokemon = nextPokemon;
@@ -524,7 +565,33 @@
       const stat = EVO_STATS.find((candidate) => normalize(text).includes(normalize(candidate)));
       if (stat && !cardPriority.includes(stat)) cardPriority.push(stat);
     }
-    return { pokemon: pokemonName, url, moves, cardPriority };
+    const bondGroups = [];
+    const seenBondPairs = new Set();
+    for (const node of Array.from(doc.querySelectorAll("li, p, blockquote"))) {
+      const text = normalize(node.textContent);
+      const actionAt = text.search(/\b(fuse|bond|combine|merge)\b/);
+      if (actionAt < 0) continue;
+      const clause = text.slice(actionAt).split(/[.!?;]/, 1)[0];
+      const matches = moveData
+        .map((move) => ({ move, at: clause.indexOf(normalize(move.name)), length: normalize(move.name).length }))
+        .filter((item) => item.at >= 0)
+        .sort((a, b) => a.at - b.at || b.length - a.length);
+      const pair = [];
+      const occupied = [];
+      for (const item of matches) {
+        if (occupied.some(([start, end]) => item.at < end && item.at + item.length > start)) continue;
+        occupied.push([item.at, item.at + item.length]);
+        if (!pair.some((move) => normalize(move.name) === normalize(item.move.name))) pair.push(item.move);
+        if (pair.length === 2) break;
+      }
+      if (pair.length < 2) continue;
+      const key = pair.map((move) => normalize(move.name)).sort().join("|");
+      if (seenBondPairs.has(key)) continue;
+      seenBondPairs.add(key);
+      bondGroups.push(pair.map((move) => move.name));
+      if (bondGroups.length >= 4) break;
+    }
+    return { pokemon: pokemonName, url, moves, cardPriority, bondGroups };
   }
 
   function renderPartnerBuild() {
@@ -532,6 +599,8 @@
     const matchingBuild = hasPartnerBuildForCurrentPokemon();
     ui.autoBuild.disabled = !matchingBuild;
     ui.autoBuild.checked = Boolean(matchingBuild && state.autoBuildFromMoveset);
+    ui.autoBond.disabled = !matchingBuild;
+    ui.autoBond.checked = Boolean(matchingBuild && state.autoBondFromMoveset);
     if (!state.pokemon) {
       const message = document.createElement("p");
       message.className = "muted";
@@ -567,6 +636,13 @@
       row.append(name, evo);
       ui.moveset.append(row);
     }
+    const suggestedBond = getPartnerBuildBondPair();
+    if (suggestedBond) {
+      const bond = document.createElement("p");
+      bond.className = "muted moveset-source";
+      bond.textContent = `Bond ưu tiên: ${suggestedBond.names.join(" + ")} · ${suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
+      ui.moveset.append(bond);
+    }
     if (state.partnerBuild.cardPriority.length) {
       const priority = document.createElement("p");
       priority.className = "muted moveset-source";
@@ -585,6 +661,9 @@
     ui.buildModeStatus.textContent = state.autoBuildFromMoveset
       ? "Đang ưu tiên move và thẻ theo move set này."
       : "Bật tự build để ưu tiên move set này khi chọn thẻ.";
+    ui.bondStatus.textContent = state.autoBondFromMoveset
+      ? "Đang chờ Bond; dùng cặp được hướng dẫn hoặc cặp phối hợp tốt nhất trong move set."
+      : "Bật để tự chọn hai move Bond theo move set Partner.";
   }
 
   function renderTypes() {
@@ -676,6 +755,7 @@
     autoPickSignature = "";
     lastTrackedSelectionSignature = "";
     lastTrackedSelectionAt = 0;
+    clearBondTracking();
     state.learnedMoves = [];
     state.fusedGroups = [];
     state.statPicks = [];
@@ -1153,6 +1233,265 @@
     return { score, reasons: reasons.slice(0, 3) };
   }
 
+  function getPartnerBuildBondPair() {
+    if (!hasPartnerBuildForCurrentPokemon()) return null;
+    const explicit = (state.partnerBuild.bondGroups || []).find((group) => group.length >= 2);
+    if (explicit) return { names: explicit.slice(0, 2), source: "guide" };
+
+    const moves = state.partnerBuild.moves
+      .map((item, index) => ({ move: getMoveData(item.name), index }))
+      .filter((item) => item.move);
+    let best = null;
+    for (let i = 0; i < moves.length; i += 1) {
+      for (let j = i + 1; j < moves.length; j += 1) {
+        const pair = [moves[i], moves[j]];
+        const synergy = fusionPairScore(pair[0].move, pair[1].move);
+        const orderBonus = (MAX_MOVE_SLOTS - pair[0].index + MAX_MOVE_SLOTS - pair[1].index) * 3;
+        const score = synergy.score + orderBonus;
+        if (!best || score > best.score) {
+          best = { names: pair.map((item) => item.move.name), source: "moveset", score, reasons: synergy.reasons };
+        }
+      }
+    }
+    return best;
+  }
+
+  function bondCardNodes() {
+    if (!bondCardsRoot) return [];
+    const cardClassNodes = Array.from(bondCardsRoot.querySelectorAll(".card"));
+    if (cardClassNodes.length) return cardClassNodes;
+    const buttons = Array.from(bondCardsRoot.querySelectorAll('button, [role="button"]'));
+    if (buttons.length) return buttons;
+    return Array.from(bondCardsRoot.children).filter((node) => node instanceof HTMLElement);
+  }
+
+  function bondCandidates() {
+    return bondCardNodes().map(candidateFromCard).filter((candidate) => candidate.move);
+  }
+
+  function bondPhase() {
+    const prompt = normalize(document.querySelector("#bond-sub")?.textContent || "");
+    if (/\b(first|1st)\b/.test(prompt)) return "first";
+    if (/\b(second|2nd|another)\b/.test(prompt)) return "second";
+    return "unknown";
+  }
+
+  function bondScreenVisible() {
+    const screen = document.querySelector("#scr-bond");
+    return Boolean(screen && !screen.classList.contains("hidden") && getComputedStyle(screen).display !== "none");
+  }
+
+  function bondPriority(name) {
+    const index = state.partnerBuild?.moves.findIndex((move) => normalize(move.name) === normalize(name)) ?? -1;
+    return index < 0 ? 0 : Math.max(1, MAX_MOVE_SLOTS - index) * 3;
+  }
+
+  function chooseBondPlan(candidates) {
+    const available = new Map(candidates.map((candidate) => [normalize(candidate.move.name), candidate.move]));
+    for (const group of state.partnerBuild?.bondGroups || []) {
+      const pair = group.slice(0, 2).map((name) => available.get(normalize(name)) || null);
+      if (pair.length === 2 && pair.every(Boolean)) return { names: pair.map((move) => move.name), source: "guide" };
+    }
+
+    const suggested = getPartnerBuildBondPair();
+    if (suggested && suggested.names.every((name) => available.has(normalize(name)))) return suggested;
+
+    let best = null;
+    for (let i = 0; i < candidates.length; i += 1) {
+      for (let j = i + 1; j < candidates.length; j += 1) {
+        const first = candidates[i].move;
+        const second = candidates[j].move;
+        const synergy = fusionPairScore(first, second);
+        const score = synergy.score + bondPriority(first.name) + bondPriority(second.name);
+        if (!best || score > best.score) {
+          const firstPriority = bondPriority(first.name);
+          const secondPriority = bondPriority(second.name);
+          const names = firstPriority >= secondPriority ? [first.name, second.name] : [second.name, first.name];
+          best = { names, source: "moveset", score, reasons: synergy.reasons };
+        }
+      }
+    }
+    return best;
+  }
+
+  function chooseBondPartner(firstName, candidates) {
+    for (const group of state.partnerBuild?.bondGroups || []) {
+      if (group.some((name) => normalize(name) === normalize(firstName))) {
+        const name = group.find((item) => normalize(item) !== normalize(firstName)
+          && candidates.some((candidate) => normalize(candidate.move.name) === normalize(item)));
+        if (name) return candidates.find((candidate) => normalize(candidate.move.name) === normalize(name));
+      }
+    }
+    const suggested = getPartnerBuildBondPair();
+    if (suggested?.names.some((name) => normalize(name) === normalize(firstName))) {
+      const preferred = suggested.names.find((name) => normalize(name) !== normalize(firstName));
+      const match = candidates.find((candidate) => normalize(candidate.move.name) === normalize(preferred));
+      if (match) return match;
+    }
+
+    const first = getMoveData(firstName);
+    if (!first) return null;
+    return candidates
+      .filter((candidate) => normalize(candidate.move.name) !== normalize(firstName))
+      .map((candidate) => ({
+        candidate,
+        score: fusionPairScore(first, candidate.move).score + bondPriority(candidate.move.name)
+      }))
+      .sort((a, b) => b.score - a.score)[0]?.candidate || null;
+  }
+
+  function bondSelectionSignature(phase, candidates) {
+    return `${phase}|${candidates.map((candidate) => normalize(candidate.move.name)).join(",")}`;
+  }
+
+  function updateBondState() {
+    const visible = bondScreenVisible();
+    if (!visible) {
+      if (isBondVisible) {
+        if (bondPendingFirstMove && bondPendingSecondMove) {
+          markMovesFused([bondPendingFirstMove, bondPendingSecondMove]);
+          ui.bondStatus.textContent = `Đã ghi nhận Bond: ${bondPendingFirstMove} + ${bondPendingSecondMove}.`;
+        } else if (bondPendingFirstMove) {
+          ui.bondStatus.textContent = `Bond đóng trước khi chọn move thứ hai; chưa ghi nhận ${bondPendingFirstMove}.`;
+        }
+        clearBondTracking();
+        isBondVisible = false;
+        if (!isLevelUpVisible) setPanelOpen(false);
+      }
+      return;
+    }
+
+    if (!isBondVisible) {
+      isBondVisible = true;
+      bondManualOverride = false;
+      bondAttemptSignature = "";
+      setPanelOpen(true);
+    }
+    const phase = bondPhase();
+    const candidates = bondCandidates();
+    if (phase === "second" && bondWatchdogTimer) {
+      clearTimeout(bondWatchdogTimer);
+      bondWatchdogTimer = null;
+    }
+    if (bondPendingSecondMove || bondManualOverride) return;
+    if (!state.autoBondFromMoveset || !hasPartnerBuildForCurrentPokemon()) {
+      if (phase === "unknown") ui.bondStatus.textContent = "Đã nhận màn Bond; chưa xác định được bước chọn từ nội dung game.";
+      else if (!state.autoBondFromMoveset) ui.bondStatus.textContent = "Đã nhận màn Bond; tự chọn đang tắt.";
+      return;
+    }
+    if (phase === "unknown" || !candidates.length) {
+      ui.bondStatus.textContent = "Đã nhận màn Bond; đang chờ danh sách move ổn định.";
+      return;
+    }
+
+    if (phase === "first") {
+      if (bondPendingFirstMove) return;
+      const plan = chooseBondPlan(candidates);
+      const firstName = plan?.names[0];
+      const candidate = candidates.find((item) => normalize(item.move.name) === normalize(firstName));
+      if (!candidate) {
+        ui.bondStatus.textContent = "Không đủ hai move khớp move set để tự chọn Bond.";
+        return;
+      }
+      const signature = bondSelectionSignature(phase, candidates);
+      queueBondChoice(candidate, phase, signature, plan?.source === "guide"
+        ? `cặp trong hướng dẫn build: ${plan.names.join(" + ")}`
+        : `move set Partner: ${plan.names.join(" + ")}`);
+      return;
+    }
+
+    if (!bondPendingFirstMove) {
+      const selected = bondCardNodes().find((node) => node.matches('[aria-selected="true"], [aria-pressed="true"], .selected, .is-selected, .chosen'));
+      const inferred = selected ? candidateFromCard(selected).move?.name : "";
+      if (inferred) bondPendingFirstMove = inferred;
+    }
+    if (!bondPendingFirstMove) {
+      ui.bondStatus.textContent = "Chưa nhận diện move thứ nhất; sẽ không tự chọn ngẫu nhiên move thứ hai.";
+      return;
+    }
+    const candidate = chooseBondPartner(bondPendingFirstMove, candidates);
+    if (!candidate) {
+      ui.bondStatus.textContent = `Không tìm thấy move ghép phù hợp với ${bondPendingFirstMove}.`;
+      return;
+    }
+    const signature = bondSelectionSignature(phase, candidates);
+    queueBondChoice(candidate, phase, signature, `ghép với ${bondPendingFirstMove}`);
+  }
+
+  function queueBondChoice(candidate, phase, signature, reason) {
+    if (bondAutoTimer || bondAttemptSignature === signature) return;
+    bondAttemptSignature = signature;
+    ui.bondStatus.textContent = `Sẽ tự chọn ${candidate.move.name} (${reason})…`;
+    bondAutoTimer = setTimeout(() => {
+      bondAutoTimer = null;
+      const currentPhase = bondPhase();
+      const currentCandidates = bondCandidates();
+      const current = currentCandidates.find((item) => normalize(item.move.name) === normalize(candidate.move.name));
+      if (!state.autoBondFromMoveset || !bondScreenVisible() || currentPhase !== phase || !current?.element.isConnected || bondManualOverride) {
+        bondAttemptSignature = "";
+        updateBondState();
+        return;
+      }
+      if (phase === "first") {
+        bondPendingFirstMove = current.move.name;
+        bondPendingSecondMove = "";
+      } else {
+        bondPendingSecondMove = current.move.name;
+      }
+      bondPendingStartedAt = Date.now();
+      current.element.click();
+      ui.bondStatus.textContent = `Đã bấm ${current.move.name}; đang chờ game xác nhận bước Bond.`;
+      if (bondWatchdogTimer) clearTimeout(bondWatchdogTimer);
+      bondWatchdogTimer = setTimeout(() => {
+        bondWatchdogTimer = null;
+        if (!bondScreenVisible()) return;
+        const stillSamePhase = bondPhase() === phase;
+        if (stillSamePhase && phase === "first" && normalize(bondPendingFirstMove) === normalize(current.move.name)) {
+          bondPendingFirstMove = "";
+          ui.bondStatus.textContent = `Game chưa chuyển sang bước chọn thứ hai sau khi bấm ${current.move.name}; hãy chọn thủ công.`;
+        } else if (stillSamePhase && phase === "second" && normalize(bondPendingSecondMove) === normalize(current.move.name)) {
+          bondPendingSecondMove = "";
+          ui.bondStatus.textContent = `Game chưa xác nhận move ${current.move.name}; hãy chọn thủ công.`;
+        }
+      }, 1800);
+    }, AUTO_BOND_DELAY_MS);
+  }
+
+  function recordManualBondChoice(candidate) {
+    if (!candidate?.move) return;
+    if (bondAutoTimer) clearTimeout(bondAutoTimer);
+    bondAutoTimer = null;
+    bondAttemptSignature = "";
+    bondManualOverride = true;
+    if (bondPhase() === "first" || !bondPendingFirstMove) {
+      bondPendingFirstMove = candidate.move.name;
+      bondPendingSecondMove = "";
+      ui.bondStatus.textContent = `Đã nhận move thứ nhất: ${candidate.move.name}.`;
+    } else {
+      bondPendingSecondMove = candidate.move.name;
+      ui.bondStatus.textContent = `Đã nhận cặp ${bondPendingFirstMove} + ${candidate.move.name}; chờ game xác nhận.`;
+    }
+  }
+
+  function onGameBondCardClick(event) {
+    if (!event.isTrusted) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const card = target?.closest("#bond-cards .card") || target?.closest('#bond-cards button, #bond-cards [role="button"]') || target?.closest("#bond-cards > *");
+    if (card) recordManualBondChoice(candidateFromCard(card));
+  }
+
+  function clearBondTracking() {
+    if (bondAutoTimer) clearTimeout(bondAutoTimer);
+    if (bondWatchdogTimer) clearTimeout(bondWatchdogTimer);
+    bondAutoTimer = null;
+    bondWatchdogTimer = null;
+    bondAttemptSignature = "";
+    bondPendingFirstMove = "";
+    bondPendingSecondMove = "";
+    bondPendingStartedAt = 0;
+    bondManualOverride = false;
+  }
+
   function markMovesFused(names) {
     const normalizedNames = names.map(normalize);
     const involved = state.fusedGroups.filter((group) => group.some((name) => normalizedNames.includes(normalize(name))));
@@ -1176,10 +1515,31 @@
     const moves = state.learnedMoves.map((item) => getMoveData(item.name)).filter(Boolean);
     const fusionCount = state.fusedGroups.reduce((total, group) => total + Math.max(0, group.length - 1), 0);
     ui.bondCount.textContent = state.fusedGroups.length ? `${fusionCount} Bond đã ghi` : `${moves.length} skill`;
+    const partnerPair = getPartnerBuildBondPair();
+    if (partnerPair) {
+      const row = document.createElement("div");
+      row.className = "recommendation best";
+      const title = document.createElement("div");
+      title.className = "recommendation-head";
+      const names = document.createElement("strong");
+      names.textContent = `Move set Partner: ${partnerPair.names.join(" + ")}`;
+      const source = document.createElement("span");
+      source.className = "score";
+      source.textContent = partnerPair.source === "guide" ? "build" : "gợi ý";
+      title.append(names, source);
+      const reason = document.createElement("p");
+      const learned = new Set(state.learnedMoves.map((move) => normalize(move.name)));
+      const learnedCount = partnerPair.names.filter((name) => learned.has(normalize(name))).length;
+      reason.textContent = partnerPair.source === "guide"
+        ? `Nguồn build chỉ rõ cặp này; đã có ${learnedCount}/2 move trong lượt.`
+        : `Ưu tiên theo độ phối hợp và thứ tự move set; đã có ${learnedCount}/2 move trong lượt.`;
+      row.append(title, reason);
+      ui.fusions.append(row);
+    }
     if (moves.length < 2) {
       const message = document.createElement("p");
       message.className = "muted";
-      message.textContent = "Học thêm skill để xem các cặp kết hợp.";
+      message.textContent = partnerPair ? "Học đủ hai move của cặp ưu tiên để xem gợi ý ghép hiện tại." : "Học thêm skill để xem các cặp kết hợp.";
       ui.fusions.append(message);
       return;
     }
@@ -1285,10 +1645,17 @@
   }
 
   function onGameLevelUpKeydown(event) {
-    if (!isLevelUpVisible || event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.composedPath().includes(host)) return;
     const target = event.target;
     if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (isBondVisible) {
+      const bondIndex = { "1": 0, "2": 1, "3": 2, "4": 3 }[event.key];
+      const bondCandidate = bondIndex === undefined ? null : bondCandidates()[bondIndex];
+      if (bondCandidate && event.isTrusted) recordManualBondChoice(bondCandidate);
+      return;
+    }
+    if (!isLevelUpVisible) return;
     const index = { "1": 0, "2": 1, "3": 2 }[event.key];
     if (index === undefined) return;
     const card = cardNodes()[index];

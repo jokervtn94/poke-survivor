@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.3
+# PokéSurvivor Build Assistant 0.3.4
 
-Extension Chrome/Edge Manifest V3 phát triển lại từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner và có thể tự chọn thẻ để đi theo move set. Tác giả: **Jokervtn94**.
+Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ theo build và tự xử lý hộp thoại ghép Bond. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải ZIP v0.3.3 và giải nén.
+1. Tải ZIP v0.3.4 và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -21,6 +21,8 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và gợi ý cặp Bond theo các move đã học.
+- **Gợi ý Bond theo Partner:** hiển thị cặp ghép được hướng dẫn trong build cộng đồng; nếu trang không nêu cặp Bond, xếp cặp ưu tiên từ move set theo độ phối hợp và thứ tự move.
+- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Khi hộp thoại Bond hiện ra, extension nhận diện bước chọn move thứ nhất/thứ hai, ưu tiên cặp được hướng dẫn, rồi bấm hai move trong game. Nếu không xác định được bước hoặc game không chuyển trạng thái sau click, extension dừng và báo để người chơi chọn thủ công.
 - **Reset lượt:** khi Pokémon bị hạ và game hiện `#scr-over`, xóa skill, Bond, thẻ chỉ số và cấp độ của lượt; giữ lựa chọn Pokémon và hướng build.
 
 ## Cách dùng Auto build
@@ -29,6 +31,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 2. Chờ move set tải tự động; nếu chưa có, nhấn **Tải gợi ý**.
 3. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
 4. Khi lên cấp, extension dùng điểm để chọn; nếu các lựa chọn gần nhau trong 6 điểm, nó ưu tiên move đầu tiên còn xuất hiện trong thứ tự move set.
+5. Bật **Tự chọn Bond theo move set** riêng nếu muốn extension tự bấm hai move trong hộp thoại Bond.
 
 Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được thêm trước sẽ có ưu tiên trước trong trường hợp gần điểm bằng nhau. Tắt **Tự build theo move set** nếu chỉ muốn xem gợi ý; tắt **Tự chọn thẻ** để không tự bấm.
 
@@ -36,6 +39,7 @@ Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được t
 
 - Move/Pokémon game data lấy từ các trang tham chiếu công khai của [PokéSurvivor](https://pokesurvivor.com/en/).
 - Move set tham khảo lấy từ [PokéSurvivor Wiki Builds](https://pokesurvivors.org/builds/). Đây là wiki cộng đồng không chính thức; trang công bố một build mặc định cho mỗi Pokémon theo luật game, không phải xếp hạng lượt chọn phổ biến hay tỷ lệ thắng. Dữ liệu có thể thiếu hoặc đổi định dạng; khi đó extension vẫn hoạt động với gợi ý nội bộ.
+- Một số trang build có thể ghi rõ một cặp move cần ghép. Extension đọc các hướng dẫn đó nếu có; nếu không, cặp Bond là gợi ý heuristic tính từ loại đòn, trạng thái, khả năng khống chế/hỗ trợ và thứ tự move set.
 - Điểm là heuristic minh bạch, không đọc HP, đối thủ, thời tiết hoặc trạng thái ẩn trong game. Tên thẻ chưa có trong move catalog có thể chỉ được xếp theo loại hiệu ứng và hướng build.
 - Move set và card priority là gợi ý; game có thể không đưa mọi move vào một lượt. Auto build không thay đổi trang bị hay Partner trong game.
 

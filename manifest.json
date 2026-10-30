@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.3",
-  "description": "Gợi ý move set cho Partner, tự build theo ưu tiên, xếp thẻ skill và nâng cấp theo điểm cùng hướng build.",
+  "version": "0.3.4",
+  "description": "Gợi ý move set Partner, tự chọn thẻ lên cấp và tự ghép Bond theo build.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [
