@@ -17,7 +17,7 @@
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
-  const EXTENSION_VERSION = "0.3.11";
+  const EXTENSION_VERSION = "0.3.12";
   const AUTO_PICK_DELAY_MS = 1250;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
@@ -954,7 +954,11 @@
 
   function isLevelUpPromptVisible() {
     refreshLevelUpSignal();
-    if (isScreenVisible(document.querySelector("#scr-levelup"))) return true;
+    const levelUpScreen = document.querySelector("#scr-levelup");
+    // Keep the same visibility check as the known-working 0.3.2 release.
+    // Some game layouts report no client rects for the overlay even while its
+    // children are visible, so isScreenVisible() is too strict for this screen.
+    if (levelUpScreen?.isConnected && !levelUpScreen.classList.contains("hidden") && getComputedStyle(levelUpScreen).display !== "none") return true;
     const choicesWithText = cardNodes().filter((card) => Boolean((card.innerText || card.textContent || "").trim()));
     if (choicesWithText.filter(isElementRendered).length >= 2) return true;
     // The game updates lvl-num as it creates a new offer. Keep that signal
@@ -1530,18 +1534,17 @@
   }
 
   function cardNodes() {
-    const screenChoices = Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
-    if (screenChoices.length >= 2) return screenChoices;
-    const cardsRoot = document.querySelector("#cards") || document.querySelector("#scr-levelup .cards");
-    if (!cardsRoot) return screenChoices;
+    // #cards is the game's canonical level-up choice list. Scope to it so
+    // controls such as the Reroll button cannot be mistaken for skill cards.
+    const cardsRoot = document.querySelector("#cards");
+    if (!cardsRoot) return [];
     const cardClassNodes = Array.from(cardsRoot.querySelectorAll(".card"));
     if (cardClassNodes.length >= 2) return cardClassNodes;
     const buttons = Array.from(cardsRoot.querySelectorAll('button, [role="button"]'));
     if (buttons.length >= 2) return buttons;
     const children = Array.from(cardsRoot.children).filter((node) => node instanceof HTMLElement);
     if (children.length >= 2) return children;
-    const levelUpCards = Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
-    return levelUpCards.length >= 2 ? levelUpCards : children;
+    return children;
   }
 
   function candidateFromCard(card) {

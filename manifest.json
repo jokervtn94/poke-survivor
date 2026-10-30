@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "description": "Gợi ý TM cho Partner; tự xử lý Missions và Gacha sau mỗi ván.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
