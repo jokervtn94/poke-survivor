@@ -17,7 +17,6 @@
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
-  const AUTO_PICK_MIN_SCORE = 6;
   const AUTO_PICK_DELAY_MS = 1250;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
@@ -137,8 +136,8 @@
 
         <div class="section-title"><span>Đề xuất ở lần lên cấp này</span><small id="psba-level">chờ thẻ</small></div>
         <div id="psba-recommendations" class="recommendations"><p class="muted">Khi màn hình chọn thẻ xuất hiện, gợi ý sẽ hiện ở đây.</p></div>
-        <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ dẫn điểm</span></label>
-        <p id="psba-auto-status" class="muted auto-status">Tự chọn khi thẻ trên 6 điểm và đứng đầu; chờ thẻ mở khóa.</p>
+        <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ điểm cao nhất</span></label>
+        <p id="psba-auto-status" class="muted auto-status">Tự chọn thẻ hạng 1; nếu hòa hoặc chưa chấm được thì theo thứ tự game.</p>
 
         <div class="section-title"><span>Nhiệm vụ</span><button id="psba-check-missions" class="text-button" type="button">Kiểm tra</button></div>
         <label class="auto-pick-row"><span><input id="psba-auto-claim-missions" type="checkbox"> Tự nhận thưởng nhiệm vụ hoàn thành</span></label>
@@ -282,6 +281,7 @@
   ui.autoClaimMissions.checked = state.autoClaimMissions;
 
   let gameRefreshTimer = null;
+  let lastLevelUpPollFingerprint = "";
   let observedGameRoots = new Set();
   const gameRootSelector = "#game, #cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-shop, #shop-body, #scr-bag, #bag-body, #coins, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
   const gameMutationTargetSelector = "#cards, #scr-levelup, #scr-over, #scr-goals, #goals-body, #scr-shop, #shop-body, #scr-bag, #bag-body, #coins, #menu-partner-name, #menu-partner-info, #res-name, #starter-info";
@@ -298,7 +298,7 @@
 
   function refreshObservedGameRoots(gameObserver) {
     const roots = new Set(observedGameRootSelectors.map((selector) => document.querySelector(selector)).filter(Boolean));
-    if (roots.size === observedGameRoots.size && [...roots].every((root) => observedGameRoots.has(root))) return;
+    if (roots.size === observedGameRoots.size && [...roots].every((root) => observedGameRoots.has(root))) return false;
     observedGameRoots = roots;
     gameObserver.disconnect();
     gameObserver.observe(document.documentElement, { subtree: true, childList: true });
@@ -311,6 +311,7 @@
         attributeFilter: ["class", "data-id", "data-move", "disabled", "aria-disabled"]
       });
     }
+    return true;
   }
 
   function isRelevantGameMutation(record) {
@@ -355,6 +356,16 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshAfterResume();
   });
+  window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    const rootsChanged = refreshObservedGameRoots(observer);
+    const visible = isScreenVisible(document.querySelector("#scr-levelup"));
+    const fingerprint = `${visible}:${visible ? cardSelectionSignature() : ""}`;
+    if (!rootsChanged && fingerprint === lastLevelUpPollFingerprint && visible === isLevelUpVisible) return;
+    lastLevelUpPollFingerprint = fingerprint;
+    updateLevelUpState();
+    updateGameOverState();
+  }, 500);
 
   setPanelOpen(false);
   loadStoredState();
@@ -755,6 +766,7 @@
   function updateLevelUpState() {
     const screen = document.querySelector("#scr-levelup");
     const visible = isScreenVisible(screen);
+    lastLevelUpPollFingerprint = `${visible}:${visible ? cardSelectionSignature() : ""}`;
     if (visible !== isLevelUpVisible) {
       const wasVisible = isLevelUpVisible;
       isLevelUpVisible = visible;
@@ -781,7 +793,7 @@
 
   function updateGameOverState() {
     const screen = document.querySelector("#scr-over");
-    const visible = Boolean(screen && !screen.classList.contains("hidden") && getComputedStyle(screen).display !== "none");
+    const visible = isScreenVisible(screen);
     if (visible && !wasGameOver) {
       wasGameOver = true;
       clearRunTracker();
@@ -1441,7 +1453,8 @@
       .sort((a, b) => normalize(b.name).length - normalize(a.name).length)[0] || null;
     const evolution = /evol|golden|gold card|evolved/.test(normalizedText) || /\bevo\b|evolution|golden/.test(classes);
     const stat = move ? "" : EVO_STATS.find((item) => normalizedText.includes(normalize(item))) || "";
-    return { element: card, text: (card.innerText || card.textContent || "").trim().replace(/\s+/g, " "), normalizedText, move, evolution, stat };
+    const visibleText = (card.innerText || card.textContent || "").trim().replace(/\s+/g, " ");
+    return { element: card, text: visibleText || attributes.join(" ").trim(), normalizedText, move, evolution, stat };
   }
 
   function moveProfile(move) {
@@ -1610,7 +1623,14 @@
       }
     }
 
-    if (!reasons.length) reasons.push("chưa khớp dữ liệu move; cân nhắc theo tình trạng run");
+    if (score <= 0) {
+      score = 1;
+      reasons.push(reasons.length
+        ? "điểm nền; giữ ưu tiên theo thứ tự thẻ game"
+        : "chưa khớp dữ liệu move; giữ điểm nền và ưu tiên theo thứ tự thẻ game");
+    } else if (!reasons.length) {
+      reasons.push("move chưa có dữ liệu phân tích chi tiết");
+    }
     return { ...candidate, score, reasons };
   }
 
@@ -1763,9 +1783,8 @@
   }
 
   function refreshRecommendations() {
-    const candidates = cardNodes().map(candidateFromCard).filter((candidate) => candidate.text);
-    cachedCandidates = candidates.map(scoreCandidate).sort((a, b) => b.score - a.score);
-    const hasClearRecommendation = (cachedCandidates[0]?.score || 0) > 0;
+    cachedCandidates = rankCurrentCandidates();
+    const hasClearRecommendation = cachedCandidates.length > 0;
     cardNodes().forEach((card) => {
       card.removeAttribute("data-psba-rank");
       card.removeAttribute("data-psba-label");
@@ -1779,7 +1798,15 @@
     renderRecommendations(cachedCandidates, hasClearRecommendation);
     const level = document.querySelector("#lvl-num")?.textContent?.trim();
     ui.level.textContent = isLevelUpVisible ? `Level ${level || "?"}` : "chờ thẻ";
-    scheduleAutoPick(cachedCandidates, hasClearRecommendation);
+    scheduleAutoPick(cachedCandidates);
+  }
+
+  function rankCurrentCandidates() {
+    return cardNodes()
+      .map((card, choiceIndex) => ({ ...candidateFromCard(card), choiceIndex }))
+      .filter((candidate) => candidate.text)
+      .map(scoreCandidate)
+      .sort((a, b) => b.score - a.score || a.choiceIndex - b.choiceIndex);
   }
 
   function cardSelectionSignature() {
@@ -1793,7 +1820,7 @@
     return `${cardSelectionSignature()}::${scores}`;
   }
 
-  function scheduleAutoPick(candidates, hasClearRecommendation) {
+  function scheduleAutoPick(candidates) {
     const cardSignature = cardSelectionSignature();
     const planSignature = scoredCandidateSignature(candidates);
     if (!state.autoPick || !isLevelUpVisible) {
@@ -1817,15 +1844,7 @@
     }
 
     const best = candidates[0];
-    const runnerUp = candidates[1];
-    const gap = best ? best.score - (runnerUp?.score ?? 0) : 0;
-    const confident = hasClearRecommendation && best?.score > AUTO_PICK_MIN_SCORE && (!runnerUp || gap > 0);
-    if (!confident) {
-      ui.autoStatus.textContent = `Đang chờ thẻ đạt trên 6 điểm và dẫn đầu${best ? ` (hiện dẫn ${Math.max(0, gap)} điểm)` : ""}; bạn có thể chọn thủ công.`;
-      return;
-    }
-
-    ui.autoStatus.textContent = `Sẽ tự chọn ${best.move?.name || best.text.slice(0, 32)} sau khi thẻ ổn định.`;
+    ui.autoStatus.textContent = `Sẽ tự chọn hạng 1: ${best.move?.name || best.text.slice(0, 32)} (${best.score}đ).`;
     pendingAutoPickSignature = planSignature;
     attemptAutoPick(0);
 
@@ -1834,7 +1853,7 @@
         autoPickTimer = null;
         pendingAutoPickSignature = "";
         const currentScreen = document.querySelector("#scr-levelup");
-        const currentCandidates = cardNodes().map(candidateFromCard).filter((candidate) => candidate.text).map(scoreCandidate).sort((a, b) => b.score - a.score);
+        const currentCandidates = rankCurrentCandidates();
         if (!state.autoPick || !isLevelUpVisible || !isScreenVisible(currentScreen) || scoredCandidateSignature(currentCandidates) !== planSignature) return;
         const currentBest = currentCandidates[0];
         if (!currentBest?.element?.isConnected) return;
@@ -1844,24 +1863,45 @@
             pendingAutoPickSignature = planSignature;
             attemptAutoPick(attempt + 1);
           } else {
-            ui.autoStatus.textContent = "Game chưa mở khóa thẻ; bạn có thể chọn thủ công.";
+            retryAutoPickAfterPause();
           }
           return;
         }
 
         currentBest.element.click();
         const currentCardsRoot = document.querySelector("#cards");
-        const accepted = !isScreenVisible(currentScreen) || currentCardsRoot?.classList.contains("done") || Boolean(currentCardsRoot?.querySelector(".selected, .chosen, [aria-selected='true']"));
+        const accepted = !isScreenVisible(currentScreen)
+          || currentCardsRoot?.classList.contains("done")
+          || Boolean(currentCardsRoot?.querySelector(".selected, .chosen, [aria-selected='true'], [data-selected='true']"))
+          || cardSelectionSignature() !== cardSignature;
         if (!accepted) {
-          autoPickSignature = "";
-          ui.autoStatus.textContent = "Game chưa nhận click nên skill chưa được ghi nhận; bạn có thể chọn thẻ thủ công.";
+          if (attempt < AUTO_PICK_MAX_RETRIES) {
+            ui.autoStatus.textContent = "Game chưa xác nhận lựa chọn; extension sẽ tự thử lại…";
+            pendingAutoPickSignature = planSignature;
+            attemptAutoPick(attempt + 1);
+          } else {
+            retryAutoPickAfterPause();
+          }
           return;
         }
         autoPickSignature = cardSignature;
         trackGameSelection(currentBest);
-        ui.autoStatus.textContent = `Đã bấm và ghi nhận: ${currentBest.move?.name || currentBest.text.slice(0, 32)}.`;
+        ui.autoStatus.textContent = `Đã tự chọn hạng 1: ${currentBest.move?.name || currentBest.text.slice(0, 32)} (${currentBest.score}đ).`;
         ui.status.textContent = `Game đã nhận thẻ phù hợp nhất cho ${state.pokemon || "Pokémon hiện tại"}.`;
       }, attempt === 0 ? AUTO_PICK_DELAY_MS : AUTO_PICK_RETRY_MS);
+    }
+
+    function retryAutoPickAfterPause() {
+      ui.autoStatus.textContent = "Đang tiếp tục chờ game xác nhận thẻ ưu tiên số 1…";
+      pendingAutoPickSignature = planSignature;
+      autoPickTimer = setTimeout(() => {
+        autoPickTimer = null;
+        pendingAutoPickSignature = "";
+        if (!state.autoPick || !isLevelUpVisible) return;
+        const freshCandidates = rankCurrentCandidates();
+        if (!freshCandidates.length || scoredCandidateSignature(freshCandidates) !== planSignature) return;
+        scheduleAutoPick(freshCandidates);
+      }, 1200);
     }
   }
 
@@ -2014,12 +2054,12 @@
     if (!hasClearRecommendation) {
       const message = document.createElement("p");
       message.className = "muted";
-      message.textContent = "Các thẻ chưa khớp đủ dữ liệu để xếp hạng đáng tin cậy. Hãy cân nhắc theo tình trạng run hoặc kiểm tra lại Pokémon/build.";
+      message.textContent = "Chưa khớp dữ liệu chi tiết; extension vẫn xếp hạng theo điểm nền và thứ tự thẻ trong game.";
       ui.recommendations.append(message);
       for (const candidate of candidates) {
         const fallback = document.createElement("div");
         fallback.className = "recommendation";
-        fallback.textContent = candidate.text.slice(0, 90) || "Lựa chọn chưa nhận diện";
+        fallback.textContent = `${candidate.choiceIndex + 1}. ${candidate.text.slice(0, 80) || "Lựa chọn chưa nhận diện"} · ${candidate.score}đ`;
         ui.recommendations.append(fallback);
       }
       return;

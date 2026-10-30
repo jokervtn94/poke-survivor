@@ -1,4 +1,4 @@
-# PokéSurvivor Build Assistant 0.3.6
+# PokéSurvivor Build Assistant 0.3.7
 
 Extension Chrome/Edge Manifest V3 hỗ trợ theo dõi lượt chơi, đề xuất build skill, đọc Partner/TM và quản lý một số thao tác trong game **[pokesurvivor.com](https://pokesurvivor.com/)**. Tác giả: **Jokervtn94**.
 
@@ -19,7 +19,7 @@ Sau khi cập nhật mã nguồn, nhấn **Reload** ở trang Extensions rồi t
 | Nhận diện Pokémon Partner | Mở bảng khi đang ở menu game; nếu chưa đồng bộ, nhấn **Đồng bộ**. Có thể nhập tên Pokémon thủ công. | Đọc tên, hệ và độ hiếm Partner từ giao diện game; dùng lựa chọn thủ công khi không nhận diện được. |
 | Chọn hướng build | Chọn **Cân bằng**, **Ưu tiên tiến hóa**, **Thiên vật lý**, **Thiên đặc biệt** hoặc **Sinh tồn**. Thêm skill muốn nhắm tới trong mục **Skill muốn nhắm tới**. | Dùng Pokémon, chiến lược và skill mục tiêu để xếp hạng thẻ lên cấp. |
 | Gợi ý thẻ lên cấp | Đợi màn hình chọn thẻ xuất hiện. Bảng hiển thị tối đa ba gợi ý và lý do/điểm số; có thể chọn thẻ thủ công bằng chuột hoặc phím `1`–`3`. | Ưu tiên tiến hóa, skill mục tiêu, chỉ số cần thiết và skill phối hợp với các move đã học. |
-| Tự chọn thẻ | Bật **Tự chọn thẻ dẫn điểm**. Tắt tùy chọn này bất cứ lúc nào để chỉ xem gợi ý. | Chỉ tự bấm khi thẻ đứng đầu đạt trên 6 điểm và hơn thẻ kế tiếp. Chờ 1,25 giây rồi thử lại mỗi 180 ms khi game còn khóa thẻ; nếu không đạt điều kiện thì để người chơi chọn. |
+| Tự chọn thẻ | Bật **Tự chọn thẻ điểm cao nhất**. Tùy chọn bật mặc định; có thể tắt nếu chỉ muốn xem gợi ý. | Tự bấm thẻ điểm cao nhất. Nếu hòa điểm hoặc move chưa có dữ liệu phân tích, ưu tiên theo thứ tự thẻ trên màn hình và vẫn tự chọn hạng 1. Không yêu cầu người chơi click thẻ. Chờ game mở khóa và tự thử lại nếu game chưa nhận lựa chọn. |
 | Theo dõi skill trong lượt | Chọn thẻ trong game như bình thường; thêm move khởi đầu hoặc move đã có bằng ô **Ghi nhận move khởi đầu** và cấp skill hiện tại. | Ghi nhận lựa chọn bằng click/phím, tính phối hợp giữa các skill và gợi ý ghép Bond. Theo dõi tối đa 16 move qua 4 ô skill; sau khi ghép Bond, nhấn **Đánh dấu đã ghép** trên cặp tương ứng. |
 | Reset sau khi Pokémon bị hạ | Không cần thao tác. | Khi nhận diện màn hình kết thúc lượt, xóa skill, chỉ số và cấp độ đã theo dõi; giữ Pokémon, chiến lược và skill mục tiêu cho lượt sau. Có thể dùng **Xóa lượt** để reset thủ công. |
 | Kiểm tra và nhận thưởng nhiệm vụ | Ở menu game, mở mục **Nhiệm vụ** trong panel hoặc tự mở màn Missions. Tắt **Tự nhận thưởng nhiệm vụ hoàn thành** nếu muốn nhận thủ công. | Đếm nhiệm vụ đang làm/đã hoàn thành/đã nhận; tự bấm nhận trên nhiệm vụ sẵn sàng khi màn Missions đang mở. Extension không tự rời trận đang chơi để mở Missions. |
@@ -38,12 +38,12 @@ Sau khi cập nhật mã nguồn, nhấn **Reload** ở trang Extensions rồi t
 
 Extension lưu tùy chọn build và dữ liệu tham khảo công khai trong `chrome.storage.local`. Chỉ slug Pokémon được chọn được gửi tới trang build tham khảo để tải dữ liệu công khai. Thông tin tài khoản game, số coin và nội dung Túi TM không được gửi ra ngoài; danh sách TM quét được chỉ giữ trong bộ nhớ trang cho tới khi đóng trang.
 
-## Bản 0.3.6
+## Bản 0.3.7
 
-- Chờ giao diện game xuất hiện nếu trang tải chậm.
-- Gắn lại observer khi Shop hoặc lượt chơi mới thay node giao diện; đồng bộ lại trạng thái khi quay lại tab.
-- Dùng listener click cấp trang và truy vấn lại `#cards` hiện tại để tránh giữ tham chiếu node cũ.
-- Chờ khóa thẻ lên cấp hết hạn và thử lại tự chọn trong thời gian giới hạn.
+- Dò lại trạng thái lên cấp định kỳ để bảng skill hiện ra sau khi quay lại từ Shop hoặc khi game thay node giao diện.
+- Mọi thẻ đều có điểm nền; move chưa có trong dữ liệu vẫn được xếp hạng theo thứ tự lựa chọn hiển thị.
+- Tự học thẻ có điểm cao nhất; khi hòa điểm hoặc không phân tích được move, chọn thẻ hạng 1 theo thứ tự game.
+- Tiếp tục thử tự chọn khi game còn khóa hoặc chưa xác nhận click; không dừng ở yêu cầu người chơi chọn thủ công.
 
 ## Tham chiếu
 
