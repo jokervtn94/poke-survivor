@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.2",
-  "description": "Theo dõi skill, gợi ý thẻ theo Pokémon và tự chọn thẻ dẫn điểm khi đạt điều kiện.",
+  "version": "0.3.3",
+  "description": "Gợi ý move set cho Partner, tự build theo ưu tiên, xếp thẻ skill và nâng cấp theo điểm cùng hướng build.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
-  "host_permissions": ["https://pokesurvivor.com/*"],
+  "host_permissions": [
+    "https://pokesurvivor.com/*",
+    "https://pokesurvivors.org/*"
+  ],
   "background": {
     "service_worker": "worker.js"
   },

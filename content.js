@@ -7,6 +7,7 @@
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
   const AUTO_PICK_MIN_SCORE = 6;
+  const AUTO_PICK_NEAR_TIE_GAP = 6;
   const AUTO_PICK_DELAY_MS = 750;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const STRATEGIES = {
@@ -22,7 +23,9 @@
     manualPokemon: false,
     strategy: "balanced",
     autoPick: true,
+    autoBuildFromMoveset: false,
     targets: [],
+    partnerBuild: null,
     learnedMoves: [],
     fusedGroups: [],
     statPicks: [],
@@ -38,6 +41,8 @@
   let autoPickTimer = null;
   let autoPickSignature = "";
   let pendingAutoPickSignature = "";
+  let lastBuildFetchPokemon = "";
+  let buildFetchInFlight = "";
   let lastTrackedSelectionSignature = "";
   let lastTrackedSelectionAt = 0;
 
@@ -61,6 +66,11 @@
         <datalist id="psba-pokemon-list"></datalist>
         <div id="psba-types" class="types"><span class="muted">Chưa nhận diện hệ</span></div>
 
+        <div class="section-title"><span>Move set gợi ý cho Partner</span><button id="psba-load-moveset" class="text-button" type="button">Tải gợi ý</button></div>
+        <div id="psba-moveset" class="moveset-list"><p class="muted">Chọn Partner để tải move set tham khảo.</p></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-build" type="checkbox" disabled> Tự build theo move set</span></label>
+        <p id="psba-build-mode-status" class="muted auto-status">Tắt chế độ tự build.</p>
+
         <label for="psba-strategy">Hướng build</label>
         <select id="psba-strategy">
           <option value="balanced">Cân bằng</option>
@@ -80,8 +90,8 @@
 
         <div class="section-title"><span>Đề xuất ở lần lên cấp này</span><small id="psba-level">chờ thẻ</small></div>
         <div id="psba-recommendations" class="recommendations"><p class="muted">Khi màn hình chọn thẻ xuất hiện, gợi ý sẽ hiện ở đây.</p></div>
-        <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ dẫn điểm</span></label>
-        <p id="psba-auto-status" class="muted auto-status">Tự chọn khi thẻ trên 6 điểm và đứng đầu; chờ thẻ mở khóa.</p>
+        <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ</span></label>
+        <p id="psba-auto-status" class="muted auto-status">Tự chọn theo điểm; nếu chênh không quá 6 điểm thì ưu tiên move set hoặc skill mục tiêu.</p>
 
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
@@ -107,6 +117,10 @@
     strategy: shadow.querySelector("#psba-strategy"),
     autoPick: shadow.querySelector("#psba-auto-pick"),
     autoStatus: shadow.querySelector("#psba-auto-status"),
+    autoBuild: shadow.querySelector("#psba-auto-build"),
+    buildModeStatus: shadow.querySelector("#psba-build-mode-status"),
+    loadMoveset: shadow.querySelector("#psba-load-moveset"),
+    moveset: shadow.querySelector("#psba-moveset"),
     targetInput: shadow.querySelector("#psba-target-input"),
     knownMove: shadow.querySelector("#psba-known-move"),
     knownLevel: shadow.querySelector("#psba-known-level"),
@@ -140,6 +154,14 @@
     persistState();
     refreshRecommendations();
   });
+  ui.autoBuild.addEventListener("change", () => {
+    state.autoBuildFromMoveset = Boolean(ui.autoBuild.checked && hasPartnerBuildForCurrentPokemon());
+    ui.autoBuild.checked = state.autoBuildFromMoveset;
+    persistState();
+    renderPartnerBuild();
+    refreshRecommendations();
+  });
+  ui.loadMoveset.addEventListener("click", () => loadPartnerMoveset(true));
   shadow.querySelector("#psba-add-target").addEventListener("click", addTarget);
   shadow.querySelector("#psba-add-known").addEventListener("click", addKnownMove);
   ui.knownMove.addEventListener("keydown", (event) => {
@@ -195,7 +217,14 @@
       manualPokemon: state.manualPokemon,
       strategy: state.strategy,
       autoPick: state.autoPick,
+      autoBuildFromMoveset: state.autoBuildFromMoveset,
       targets: [...state.targets],
+      partnerBuild: state.partnerBuild ? {
+        pokemon: state.partnerBuild.pokemon,
+        url: state.partnerBuild.url,
+        moves: state.partnerBuild.moves.map((move) => ({ ...move })),
+        cardPriority: [...state.partnerBuild.cardPriority]
+      } : null,
       learnedMoves: state.learnedMoves.map((move) => ({ ...move })),
       fusedGroups: state.fusedGroups.map((group) => [...group]),
       statPicks: [...state.statPicks],
@@ -212,15 +241,32 @@
         state.manualPokemon = Boolean(value.manualPokemon);
         state.strategy = Object.prototype.hasOwnProperty.call(STRATEGIES, value.strategy) ? value.strategy : "balanced";
         state.autoPick = value.autoPick === undefined ? true : Boolean(value.autoPick);
+        state.autoBuildFromMoveset = Boolean(value.autoBuildFromMoveset);
         state.targets = Array.isArray(value.targets) ? value.targets.filter((item) => typeof item === "string") : [];
+        state.partnerBuild = value.partnerBuild && typeof value.partnerBuild.pokemon === "string" && Array.isArray(value.partnerBuild.moves)
+          ? {
+              pokemon: value.partnerBuild.pokemon,
+              url: typeof value.partnerBuild.url === "string" ? value.partnerBuild.url : "",
+              moves: value.partnerBuild.moves.filter((move) => move && typeof move.name === "string").slice(0, MAX_MOVE_SLOTS).map((move) => ({
+                name: move.name,
+                role: typeof move.role === "string" ? move.role : "",
+                evolves: typeof move.evolves === "string" ? move.evolves : ""
+              })),
+              cardPriority: Array.isArray(value.partnerBuild.cardPriority)
+                ? value.partnerBuild.cardPriority.filter((item) => typeof item === "string").slice(0, 8)
+                : []
+            }
+          : null;
         state.learnedMoves = Array.isArray(value.learnedMoves) ? value.learnedMoves.filter((item) => item && typeof item.name === "string").slice(0, MAX_MOVES_WITH_BONDS) : [];
         state.fusedGroups = Array.isArray(value.fusedGroups)
           ? value.fusedGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, MAX_MOVE_SLOTS)
           : [];
         state.statPicks = Array.isArray(value.statPicks) ? value.statPicks.filter((item) => typeof item === "string").slice(-12) : [];
         state.lastLevel = Number.isFinite(Number(value.lastLevel)) ? Number(value.lastLevel) : 0;
+        if (!hasPartnerBuildForCurrentPokemon()) state.autoBuildFromMoveset = false;
       }
       syncUiFromState();
+      loadPartnerMovesetIfNeeded();
     } catch (_error) {
       ui.status.textContent = "Không đọc được cài đặt đã lưu; trợ lý vẫn hoạt động trong phiên này.";
     }
@@ -241,6 +287,7 @@
       populateLists();
       syncUiFromState();
       observePartnerName();
+      loadPartnerMovesetIfNeeded();
       ui.status.textContent = `Đã nạp ${pokemonData.length} Pokémon và ${moveData.length} move từ trang chính thức.`;
       refreshRecommendations();
     } catch (_error) {
@@ -306,6 +353,7 @@
     renderTypes();
     renderTargets();
     renderBuild();
+    renderPartnerBuild();
   }
 
   function currentPokemon() {
@@ -313,14 +361,32 @@
     return pokemonData.find((pokemon) => normalize(pokemon.name) === key) || null;
   }
 
-  function onPokemonInput() {
-    const nextPokemon = ui.pokemon.value.trim();
-    if (state.pokemon && normalize(state.pokemon) !== normalize(nextPokemon)) clearRunTracker();
+  function hasPartnerBuildForCurrentPokemon() {
+    return Boolean(state.partnerBuild && normalize(state.partnerBuild.pokemon) === normalize(state.pokemon) && state.partnerBuild.moves.length);
+  }
+
+  function setPartnerPokemon(name, manual = false) {
+    const nextPokemon = String(name || "").trim();
+    const changed = normalize(state.pokemon) !== normalize(nextPokemon);
+    if (changed) {
+      clearRunTracker();
+      state.partnerBuild = null;
+      state.autoBuildFromMoveset = false;
+      lastBuildFetchPokemon = "";
+    }
     state.pokemon = nextPokemon;
-    state.manualPokemon = true;
+    state.manualPokemon = manual;
+    ui.pokemon.value = nextPokemon;
     persistState();
     renderTypes();
+    renderTargets();
+    renderPartnerBuild();
     refreshRecommendations();
+    loadPartnerMovesetIfNeeded();
+  }
+
+  function onPokemonInput() {
+    setPartnerPokemon(ui.pokemon.value, true);
   }
 
   function observePartnerName() {
@@ -331,14 +397,9 @@
       if (!text) continue;
       const match = findPokemonInText(text);
       if (!match || match.name === lastAutoName) continue;
-      if (lastAutoName && normalize(match.name) !== normalize(lastAutoName)) clearRunTracker();
       lastAutoName = match.name;
       if (!state.manualPokemon || !state.pokemon) {
-        state.pokemon = match.name;
-        state.manualPokemon = false;
-        persistState();
-        syncUiFromState();
-        refreshRecommendations();
+        setPartnerPokemon(match.name, false);
       }
       return;
     }
@@ -358,16 +419,172 @@
       const text = document.querySelector(selector)?.textContent?.trim();
       const match = text && findPokemonInText(text);
       if (!match) continue;
-      if (state.pokemon && normalize(state.pokemon) !== normalize(match.name)) clearRunTracker();
-      state.pokemon = match.name;
-      state.manualPokemon = false;
       lastAutoName = match.name;
-      persistState();
-      syncUiFromState();
-      refreshRecommendations();
+      setPartnerPokemon(match.name, false);
       return;
     }
     ui.status.textContent = "Chưa đọc được tên Pokémon trong menu game. Hãy chọn hoặc nhập tên ở ô trên.";
+  }
+
+  function loadPartnerMovesetIfNeeded() {
+    if (!state.pokemon || !moveData.length) return;
+    if (hasPartnerBuildForCurrentPokemon()) {
+      renderPartnerBuild();
+      return;
+    }
+    loadPartnerMoveset(false);
+  }
+
+  async function loadPartnerMoveset(force = false) {
+    const pokemonName = state.pokemon.trim();
+    const pokemonKey = normalize(pokemonName);
+    if (!pokemonKey) {
+      ui.moveset.replaceChildren();
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = "Hãy chọn Pokémon Partner trước.";
+      ui.moveset.append(message);
+      return;
+    }
+    if (!moveData.length) {
+      ui.buildModeStatus.textContent = "Đang tải dữ liệu move; gợi ý sẽ được tải sau.";
+      return;
+    }
+    if (buildFetchInFlight === pokemonKey) return;
+    if (!force && (lastBuildFetchPokemon === pokemonKey || hasPartnerBuildForCurrentPokemon())) return;
+
+    const slug = pokemonKey.replace(/\s+/g, "-");
+    buildFetchInFlight = pokemonKey;
+    lastBuildFetchPokemon = pokemonKey;
+    ui.loadMoveset.disabled = true;
+    ui.loadMoveset.textContent = "Đang tải…";
+    ui.buildModeStatus.textContent = `Đang tải move set tham khảo cho ${pokemonName}…`;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "psba:get-partner-build", slug });
+      if (!response || response.error) throw new Error(response?.error || "Không lấy được trang build.");
+      const build = parsePartnerBuild(response.html, pokemonName, response.url || `https://pokesurvivors.org/builds/${slug}/`);
+      if (!build.moves.length) throw new Error("Trang build không có move set đọc được cho Pokémon này.");
+      if (normalize(state.pokemon) !== pokemonKey) return;
+      state.partnerBuild = build;
+      persistState();
+      renderPartnerBuild();
+      refreshRecommendations();
+      ui.buildModeStatus.textContent = `Đã nạp ${build.moves.length} move tham khảo cho ${pokemonName}.`;
+    } catch (error) {
+      if (normalize(state.pokemon) === pokemonKey) {
+        ui.buildModeStatus.textContent = error?.message || "Không tải được move set. Có thể thử lại.";
+      }
+      lastBuildFetchPokemon = "";
+    } finally {
+      if (buildFetchInFlight === pokemonKey) buildFetchInFlight = "";
+      ui.loadMoveset.disabled = false;
+      ui.loadMoveset.textContent = "Tải gợi ý";
+    }
+  }
+
+  function parsePartnerBuild(html, pokemonName, url) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(String(html || ""), "text/html");
+    const headings = Array.from(doc.querySelectorAll("h1, h2, h3"));
+    const movesHeading = headings.find((heading) => /moves/.test(normalize(heading.textContent)) && /slot|move set|moveset/.test(normalize(heading.textContent)));
+    const nextSection = (heading, selector) => {
+      if (!heading) return null;
+      for (let node = heading.nextElementSibling; node; node = node.nextElementSibling) {
+        if (/^H[1-3]$/.test(node.tagName)) break;
+        if (node.matches(selector)) return node;
+        const nested = node.querySelector(selector);
+        if (nested) return nested;
+      }
+      return null;
+    };
+    const moveTable = nextSection(movesHeading, "table") || Array.from(doc.querySelectorAll("table")).find((table) => /slot/.test(normalize(table.textContent)) && /move/.test(normalize(table.textContent)));
+    const moves = [];
+    for (const row of Array.from(moveTable?.querySelectorAll("tbody tr, tr") || [])) {
+      const cells = Array.from(row.cells || []);
+      if (cells.length < 2) continue;
+      const moveCell = cells[1];
+      const anchors = Array.from(moveCell.querySelectorAll("a")).map((anchor) => normalize(anchor.textContent));
+      const cellText = normalize(moveCell.textContent);
+      const move = moveData.find((item) => anchors.includes(normalize(item.name)))
+        || moveData.find((item) => cellText === normalize(item.name) || cellText.startsWith(`${normalize(item.name)} `));
+      if (!move || moves.some((item) => normalize(item.name) === normalize(move.name))) continue;
+      moves.push({
+        name: move.name,
+        role: (cells[0]?.textContent || "").trim().replace(/^\s*\d+\s*/, "").trim(),
+        evolves: (cells[4]?.textContent || "").trim()
+      });
+      if (moves.length >= MAX_MOVE_SLOTS) break;
+    }
+
+    const priorityHeading = headings.find((heading) => /level up card priority/.test(normalize(heading.textContent)));
+    const priorityList = nextSection(priorityHeading, "ol, ul");
+    const cardPriority = [];
+    for (const item of Array.from(priorityList?.querySelectorAll("li") || [])) {
+      const text = item.textContent || "";
+      const stat = EVO_STATS.find((candidate) => normalize(text).includes(normalize(candidate)));
+      if (stat && !cardPriority.includes(stat)) cardPriority.push(stat);
+    }
+    return { pokemon: pokemonName, url, moves, cardPriority };
+  }
+
+  function renderPartnerBuild() {
+    ui.moveset.replaceChildren();
+    const matchingBuild = hasPartnerBuildForCurrentPokemon();
+    ui.autoBuild.disabled = !matchingBuild;
+    ui.autoBuild.checked = Boolean(matchingBuild && state.autoBuildFromMoveset);
+    if (!state.pokemon) {
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = "Chọn Partner để tải move set tham khảo.";
+      ui.moveset.append(message);
+      ui.buildModeStatus.textContent = "Chưa chọn Partner.";
+      return;
+    }
+    if (!matchingBuild) {
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = `Chưa có move set tải về cho ${state.pokemon}.`;
+      ui.moveset.append(message);
+      if (!ui.buildModeStatus.textContent.startsWith("Đang tải") && !ui.buildModeStatus.textContent.includes("Không tải")) {
+        ui.buildModeStatus.textContent = "Nhấn Tải gợi ý để tìm move set cho Partner.";
+      }
+      return;
+    }
+
+    const source = document.createElement("p");
+    source.className = "muted moveset-source";
+    source.textContent = "Build cộng đồng theo luật game; dùng làm lộ trình tham khảo.";
+    ui.moveset.append(source);
+    for (const [index, move] of state.partnerBuild.moves.entries()) {
+      const row = document.createElement("div");
+      row.className = "build-item moveset-item";
+      const name = document.createElement("span");
+      name.textContent = `${index + 1}. ${move.name}${move.role ? ` · ${move.role}` : ""}`;
+      const evo = document.createElement("span");
+      evo.className = "build-level";
+      evo.textContent = moveData.find((item) => normalize(item.name) === normalize(move.name))?.evoStat || "Move";
+      if (move.evolves) evo.title = move.evolves;
+      row.append(name, evo);
+      ui.moveset.append(row);
+    }
+    if (state.partnerBuild.cardPriority.length) {
+      const priority = document.createElement("p");
+      priority.className = "muted moveset-source";
+      priority.textContent = `Thẻ ưu tiên: ${state.partnerBuild.cardPriority.join(" → ")}`;
+      ui.moveset.append(priority);
+    }
+    if (state.partnerBuild.url) {
+      const link = document.createElement("a");
+      link.className = "build-source-link";
+      link.href = state.partnerBuild.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Mở nguồn build";
+      ui.moveset.append(link);
+    }
+    ui.buildModeStatus.textContent = state.autoBuildFromMoveset
+      ? "Đang ưu tiên move và thẻ theo move set này."
+      : "Bật tự build để ưu tiên move set này khi chọn thẻ.";
   }
 
   function renderTypes() {
@@ -430,12 +647,12 @@
       return;
     }
     ui.targets.classList.remove("empty");
-    for (const target of state.targets) {
+    for (const [index, target] of state.targets.entries()) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "chip";
-      chip.textContent = `${target} ×`;
-      chip.title = "Bỏ skill mục tiêu";
+      chip.textContent = `${index + 1}. ${target} ×`;
+      chip.title = `Ưu tiên #${index + 1}; bấm để bỏ skill mục tiêu`;
       chip.addEventListener("click", () => {
         state.targets = state.targets.filter((item) => normalize(item) !== normalize(target));
         persistState();
@@ -614,6 +831,52 @@
     return { score: Math.min(score, 30), reasons };
   }
 
+  function activeMovePriorityNames() {
+    const names = [];
+    if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
+      names.push(...state.partnerBuild.moves.map((move) => move.name));
+    }
+    names.push(...state.targets);
+    return [...new Map(names.map((name) => [normalize(name), name])).values()];
+  }
+
+  function activeCardPriorityNames() {
+    return state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()
+      ? state.partnerBuild.cardPriority
+      : [];
+  }
+
+  function upgradeCategory(candidate) {
+    if (candidate.stat) {
+      const stat = normalize(candidate.stat);
+      if (stat === "power") return "damage";
+      if (stat === "reflexes") return "cooldown";
+      if (stat === "vigor" || stat === "armor" || stat === "synthesis") return "survival";
+      if (stat === "sprint") return "mobility";
+      if (stat === "magnet") return "utility";
+    }
+    const text = candidate.normalizedText;
+    if (/heal|healing|regen|shield|armor|defen|health|\bhp\b|vigor|sitrus|leftovers/.test(text)) return "survival";
+    if (/cooldown|reflex/.test(text)) return "cooldown";
+    if (/projectile|projectiles|pierce|shots|shot count/.test(text)) return "projectile";
+    if (/speed|sprint|movement|dash/.test(text)) return "mobility";
+    if (/experience|pickup radius|magnet|collect/.test(text)) return "utility";
+    if (/range|area|radius|duration/.test(text)) return "area";
+    if (/critical|crit|damage|attack|power|physical|special|offense/.test(text)) return "damage";
+    return "unknown";
+  }
+
+  function strategyUpgradeScore(category) {
+    const weights = {
+      balanced: { damage: 8, cooldown: 7, projectile: 7, area: 6, survival: 6, mobility: 5, utility: 4, unknown: 1 },
+      evolve: { damage: 8, cooldown: 7, projectile: 6, area: 5, survival: 6, mobility: 4, utility: 3, unknown: 1 },
+      physical: { damage: 9, projectile: 8, cooldown: 7, area: 6, survival: 5, mobility: 5, utility: 3, unknown: 1 },
+      special: { damage: 9, projectile: 7, cooldown: 8, area: 6, survival: 5, mobility: 5, utility: 3, unknown: 1 },
+      survival: { damage: 6, projectile: 5, cooldown: 7, area: 5, survival: 10, mobility: 8, utility: 6, unknown: 1 }
+    };
+    return weights[state.strategy]?.[category] ?? weights.balanced.unknown;
+  }
+
   function scoreCandidate(candidate) {
     let score = 0;
     const reasons = [];
@@ -631,6 +894,16 @@
       if (state.targets.some((target) => normalize(target) === normalize(move.name))) {
         score += 38;
         reasons.push("đúng skill mục tiêu");
+      }
+      if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
+        const moveSetIndex = state.partnerBuild.moves.findIndex((item) => normalize(item.name) === normalize(move.name));
+        if (moveSetIndex >= 0) {
+          score += Math.max(20, 36 - moveSetIndex * 4);
+          reasons.push(`thuộc move set Partner, ưu tiên #${moveSetIndex + 1}`);
+        } else {
+          score -= 4;
+          reasons.push("ngoài move set Partner đang theo");
+        }
       }
       const monoTypeMatch = pokemon?.types.length === 1 && normalize(pokemon.types[0]) === normalize(move.type);
       if (monoTypeMatch) {
@@ -689,6 +962,15 @@
         score += 9;
         reasons.push("hợp hướng tăng khả năng trụ lại");
       }
+      const cardPriority = activeCardPriorityNames();
+      const cardPriorityIndex = cardPriority.findIndex((name) => normalize(name) === normalize(candidate.stat));
+      if (cardPriorityIndex >= 0) {
+        score += Math.max(18, 30 - cardPriorityIndex * 3);
+        reasons.push(`thẻ ưu tiên #${cardPriorityIndex + 1} trong lộ trình build`);
+      } else {
+        score += strategyUpgradeScore(upgradeCategory(candidate));
+        reasons.push(`thuộc tính theo hướng ${STRATEGIES[strategy]}`);
+      }
       const statCount = state.statPicks.filter((item) => normalize(item) === normalize(candidate.stat)).length;
       if (statCount >= 2 && !recipes.length && !targetRecipes.length) score -= 5;
     }
@@ -702,16 +984,25 @@
         score += 4;
         reasons.push("tăng sức mạnh tổng quát");
       }
+      const category = upgradeCategory(candidate);
+      const strategyScore = strategyUpgradeScore(category);
+      score += strategyScore;
+      reasons.push(category === "unknown"
+        ? `chưa có điểm dữ liệu; xếp theo hướng ${STRATEGIES[strategy]}`
+        : `nâng cấp ${category === "survival" ? "sinh tồn" : category === "cooldown" ? "giảm hồi chiêu" : category === "projectile" ? "đạn/độ xuyên" : category === "mobility" ? "di chuyển" : category === "utility" ? "thu thập" : category === "area" ? "vùng tác dụng" : "sát thương"} hợp hướng ${STRATEGIES[strategy]}`);
     }
 
-    if (!reasons.length) reasons.push("chưa khớp dữ liệu move; cân nhắc theo tình trạng run");
+    if (!reasons.length) {
+      score += strategyUpgradeScore("unknown");
+      reasons.push(`chưa khớp dữ liệu move; xếp theo hướng ${STRATEGIES[strategy]}`);
+    }
     return { ...candidate, score, reasons };
   }
 
   function refreshRecommendations() {
     const candidates = cardNodes().map(candidateFromCard).filter((candidate) => candidate.text);
     cachedCandidates = candidates.map(scoreCandidate).sort((a, b) => b.score - a.score);
-    const hasClearRecommendation = (cachedCandidates[0]?.score || 0) > 0;
+    const hasClearRecommendation = cachedCandidates.length > 0;
     cardNodes().forEach((card) => {
       card.removeAttribute("data-psba-rank");
       card.removeAttribute("data-psba-label");
@@ -725,7 +1016,7 @@
     renderRecommendations(cachedCandidates, hasClearRecommendation);
     const level = document.querySelector("#lvl-num")?.textContent?.trim();
     ui.level.textContent = isLevelUpVisible ? `Level ${level || "?"}` : "chờ thẻ";
-    scheduleAutoPick(cachedCandidates, hasClearRecommendation);
+    scheduleAutoPick(cachedCandidates);
   }
 
   function cardSelectionSignature() {
@@ -736,10 +1027,29 @@
 
   function scoredCandidateSignature(candidates) {
     const scores = candidates.map((candidate) => `${normalize(candidate.text)}=${candidate.score}:${normalize(candidate.reasons.join(" "))}`).join("||");
-    return `${cardSelectionSignature()}::${scores}`;
+    const preferences = `${state.strategy}:${state.autoBuildFromMoveset}:${activeMovePriorityNames().map(normalize).join(",")}:${activeCardPriorityNames().map(normalize).join(",")}`;
+    return `${cardSelectionSignature()}::${scores}::${preferences}`;
   }
 
-  function scheduleAutoPick(candidates, hasClearRecommendation) {
+  function chooseAutoCandidate(candidates) {
+    if (!candidates.length) return { candidate: null, gap: Infinity, rule: "none", priorityIndex: -1 };
+    const top = candidates[0];
+    const runnerUp = candidates[1];
+    const gap = runnerUp ? Math.max(0, top.score - runnerUp.score) : Infinity;
+    if (gap <= AUTO_PICK_NEAR_TIE_GAP) {
+      const priorities = activeMovePriorityNames();
+      for (const [priorityIndex, name] of priorities.entries()) {
+        const match = candidates.find((candidate) => candidate.move
+          && normalize(candidate.move.name) === normalize(name)
+          && top.score - candidate.score <= AUTO_PICK_NEAR_TIE_GAP);
+        if (match) return { candidate: match, gap, rule: "move-priority", priorityIndex };
+      }
+      return { candidate: top, gap, rule: "build-direction", priorityIndex: -1 };
+    }
+    return { candidate: top, gap, rule: "score", priorityIndex: -1 };
+  }
+
+  function scheduleAutoPick(candidates) {
     const cardSignature = cardSelectionSignature();
     const planSignature = scoredCandidateSignature(candidates);
     if (!state.autoPick || !isLevelUpVisible) {
@@ -762,23 +1072,26 @@
       return;
     }
 
-    const best = candidates[0];
-    const runnerUp = candidates[1];
-    const gap = best ? best.score - (runnerUp?.score ?? 0) : 0;
-    const confident = hasClearRecommendation && best?.score > AUTO_PICK_MIN_SCORE && (!runnerUp || gap > 0);
-    if (!confident) {
-      ui.autoStatus.textContent = `Đang chờ thẻ đạt trên 6 điểm và dẫn đầu${best ? ` (hiện dẫn ${Math.max(0, gap)} điểm)` : ""}; bạn có thể chọn thủ công.`;
+    const decision = chooseAutoCandidate(candidates);
+    const best = decision.candidate;
+    const autoEligible = Boolean(best && (decision.gap <= AUTO_PICK_NEAR_TIE_GAP || best.score > AUTO_PICK_MIN_SCORE));
+    if (!autoEligible) {
+      ui.autoStatus.textContent = `Chênh ${Math.round(decision.gap)} điểm và thẻ đầu chưa vượt 6 điểm; đang chờ lựa chọn rõ hơn.`;
       return;
     }
 
-    ui.autoStatus.textContent = `Sẽ tự chọn ${best.move?.name || best.text.slice(0, 32)} sau khi thẻ ổn định.`;
+    const ruleText = decision.rule === "move-priority"
+      ? `theo ưu tiên move #${decision.priorityIndex + 1}`
+      : decision.rule === "build-direction" ? `theo hướng ${STRATEGIES[state.strategy]}` : "theo điểm cao nhất";
+    ui.autoStatus.textContent = `Sẽ tự chọn ${best.move?.name || best.text.slice(0, 32)} ${ruleText} sau khi thẻ ổn định.`;
     pendingAutoPickSignature = planSignature;
     autoPickTimer = setTimeout(() => {
       autoPickTimer = null;
       pendingAutoPickSignature = "";
       const currentScreen = document.querySelector("#scr-levelup");
       const currentCandidates = cardNodes().map(candidateFromCard).filter((candidate) => candidate.text).map(scoreCandidate).sort((a, b) => b.score - a.score);
-      if (!state.autoPick || !isLevelUpVisible || !currentScreen || currentScreen.classList.contains("hidden") || getComputedStyle(currentScreen).display === "none" || scoredCandidateSignature(currentCandidates) !== planSignature || !best.element.isConnected) return;
+      const currentDecision = chooseAutoCandidate(currentCandidates);
+      if (!state.autoPick || !isLevelUpVisible || !currentScreen || currentScreen.classList.contains("hidden") || getComputedStyle(currentScreen).display === "none" || scoredCandidateSignature(currentCandidates) !== planSignature || normalize(currentDecision.candidate?.text) !== normalize(best.text) || !best.element.isConnected) return;
       best.element.click();
       const stillVisible = !currentScreen.classList.contains("hidden") && getComputedStyle(currentScreen).display !== "none";
       const accepted = !stillVisible || cardsRoot.classList.contains("done");
@@ -1075,6 +1388,7 @@
     .owned-row input:first-child { flex: 1 1 auto; width: 100%; }
     .owned-row .known-level-input { flex: 0 0 45px; width: 45px; padding: 0 5px; }
     .quiet-button { flex: 0 0 auto; border: 1px solid #52617a; border-radius: 8px; background: #25334a; color: #e9f1ff; padding: 0 9px; }
+    .quiet-button:disabled, .text-button:disabled { opacity: .55; cursor: wait; }
     .types { min-height: 26px; display: flex; align-items: center; gap: 6px; margin: 5px 0 8px; }
     .type-pill { border-radius: 999px; background: #31415c; color: #dceaff; padding: 3px 8px; font-size: 10px; font-weight: 700; }
     .muted, .section-title small { color: #9baac0; font-size: 11px; }
@@ -1088,7 +1402,7 @@
     .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
     .chips.empty { display: block; color: #8e9db3; font-size: 11px; }
     .chip { border: 1px solid #53617a; border-radius: 999px; background: #25334a; color: #e9f1ff; padding: 4px 8px; font-size: 10px; }
-    .recommendations, .build-list { display: grid; gap: 6px; }
+    .recommendations, .build-list, .moveset-list { display: grid; gap: 6px; }
     .recommendation { padding: 8px 9px; border: 1px solid #394760; border-radius: 9px; background: #172235; }
     .recommendation.best { border-color: #c49b45; background: #2a281f; }
     .recommendation-head { display: flex; gap: 8px; justify-content: space-between; align-items: flex-start; }
@@ -1097,6 +1411,9 @@
     .recommendation p { margin: 4px 0 0; color: #aebbd0; font-size: 10px; line-height: 1.35; }
     .fusion-mark { display: block; margin: 5px 0 0 auto; }
     .build-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 7px; background: #172235; border-radius: 7px; font-size: 11px; }
+    .moveset-item span:first-child { min-width: 0; }
+    .moveset-source { margin: 0; line-height: 1.35; }
+    .build-source-link { color: #9bc6ff; font-size: 10px; }
     .build-level { color: #b8c9e1; white-space: nowrap; }
     .stat-history { margin: 3px 0 0; }
     .footnote { margin: 12px 0 0; padding-top: 9px; border-top: 1px solid #344157; color: #8796ad; font-size: 10px; line-height: 1.4; }
