@@ -1,0 +1,34 @@
+#cards [data-psba-rank] {
+  position: relative !important;
+}
+
+#cards [data-psba-rank="1"] {
+  outline: 3px solid #ffd166 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgb(255 209 102 / 22%) !important;
+}
+
+#cards [data-psba-rank="2"] {
+  outline: 2px solid #87d8b0 !important;
+  outline-offset: 1px !important;
+}
+
+#cards [data-psba-rank="3"] {
+  outline: 1px solid #84b9ff !important;
+  outline-offset: 1px !important;
+}
+
+#cards [data-psba-rank]::after {
+  content: "Gợi ý " attr(data-psba-label);
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 30;
+  border-radius: 999px;
+  padding: 3px 6px;
+  background: #142032;
+  color: #ffe39a;
+  font: 700 10px/1.2 system-ui, sans-serif;
+  pointer-events: none;
+  text-shadow: none;
+}

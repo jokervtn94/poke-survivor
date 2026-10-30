@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "PokéSurvivor Build Assistant",
+  "version": "0.3.6",
+  "description": "Đọc Partner, PokéCoin và Túi TM; đối chiếu build tham khảo cho Pokémon.",
+  "author": "Jokervtn94",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://pokesurvivor.com/*",
+    "https://pokesurvivors.org/*",
+    "https://raw.githubusercontent.com/JPTER78/pokesurvivor/*"
+  ],
+  "background": {
+    "service_worker": "worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://pokesurvivor.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
