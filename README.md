@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.4
+# PokéSurvivor Build Assistant 0.3.5
 
-Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ theo build và tự xử lý hộp thoại ghép Bond. Tác giả: **Jokervtn94**.
+Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và ghép Bond theo build. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải ZIP v0.3.4 và giải nén.
+1. Tải ZIP v0.3.5 và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -17,6 +17,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Xếp hạng thẻ lên cấp:** tính điểm cho move theo Pokémon, hệ, hướng build, skill mục tiêu, tiến hóa và các skill đã học.
 - **Tự chọn trong khoảng điểm gần nhau:** nếu hai lựa chọn dẫn đầu bằng điểm hoặc chênh không quá 6 điểm, extension chọn move sớm nhất trong thứ tự ưu tiên. Thứ tự này lấy từ move set Partner khi bật Auto build, sau đó đến các skill mục tiêu người chơi đã thêm. Nếu không có move ưu tiên trong nhóm điểm gần nhau, extension dùng thẻ được chấm hợp hướng build nhất.
 - **Tự chọn thẻ dẫn điểm:** nếu lựa chọn đầu hơn lựa chọn tiếp theo trên 6 điểm và đạt trên 6 điểm, extension tự chọn thẻ đó sau 750 ms để chờ game mở khóa.
+- **Gợi ý và tự chọn item:** xếp hạng hai item theo tác dụng, Partner, các move đã học hoặc move set đang theo và hướng build. Ưu tiên sát thương, hồi phục, giảm hồi chiêu, EXP, cơ động hoặc chống chịu theo tình huống; tự chọn item bật mặc định và có thể tắt riêng. Item lạ chưa nhận diện sẽ làm extension dừng click để tránh chọn đoán.
 - **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ không nhận diện được nhận điểm dự phòng; nếu cả ba lựa chọn đều không có dữ liệu, thứ tự game là tiêu chí cuối.
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
@@ -32,15 +33,18 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 3. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
 4. Khi lên cấp, extension dùng điểm để chọn; nếu các lựa chọn gần nhau trong 6 điểm, nó ưu tiên move đầu tiên còn xuất hiện trong thứ tự move set.
 5. Bật **Tự chọn Bond theo move set** riêng nếu muốn extension tự bấm hai move trong hộp thoại Bond.
+6. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
 
 Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được thêm trước sẽ có ưu tiên trước trong trường hợp gần điểm bằng nhau. Tắt **Tự build theo move set** nếu chỉ muốn xem gợi ý; tắt **Tự chọn thẻ** để không tự bấm.
 
 ## Nguồn và giới hạn
 
 - Move/Pokémon game data lấy từ các trang tham chiếu công khai của [PokéSurvivor](https://pokesurvivor.com/en/).
+- Mô tả và tác dụng item được đối chiếu với [danh sách held item của game](https://pokesurvivor.com/en/items/).
 - Move set tham khảo lấy từ [PokéSurvivor Wiki Builds](https://pokesurvivors.org/builds/). Đây là wiki cộng đồng không chính thức; trang công bố một build mặc định cho mỗi Pokémon theo luật game, không phải xếp hạng lượt chọn phổ biến hay tỷ lệ thắng. Dữ liệu có thể thiếu hoặc đổi định dạng; khi đó extension vẫn hoạt động với gợi ý nội bộ.
 - Một số trang build có thể ghi rõ một cặp move cần ghép. Extension đọc các hướng dẫn đó nếu có; nếu không, cặp Bond là gợi ý heuristic tính từ loại đòn, trạng thái, khả năng khống chế/hỗ trợ và thứ tự move set.
 - Điểm là heuristic minh bạch, không đọc HP, đối thủ, thời tiết hoặc trạng thái ẩn trong game. Tên thẻ chưa có trong move catalog có thể chỉ được xếp theo loại hiệu ứng và hướng build.
+- Điểm item là heuristic theo mô tả item công khai, trạng thái build extension đang biết và hướng build; extension không đọc HP hoặc trạng thái trận đấu ẩn để dự báo item nào chắc chắn tốt nhất.
 - Move set và card priority là gợi ý; game có thể không đưa mọi move vào một lượt. Auto build không thay đổi trang bị hay Partner trong game.
 
 ## Quyền riêng tư

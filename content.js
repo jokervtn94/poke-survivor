@@ -10,6 +10,7 @@
   const AUTO_PICK_NEAR_TIE_GAP = 6;
   const AUTO_PICK_DELAY_MS = 750;
   const AUTO_BOND_DELAY_MS = 500;
+  const AUTO_ITEM_DELAY_MS = 600;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const STRATEGIES = {
     balanced: "Cân bằng",
@@ -18,6 +19,19 @@
     special: "Thiên đặc biệt",
     survival: "Sinh tồn"
   };
+  const ITEM_DEFINITIONS = [
+    { id: "leftovers", name: "Leftovers", aliases: ["leftovers", "restos", "restes"], effects: [/recover.*hp per second/, /heal.*hp per second/, /recupera.*hp/ ] },
+    { id: "choice-band", name: "Choice Band", aliases: ["choice band", "banda elegida", "bandeau choix", "faixa escolha"], effects: [/40 damage.*can t switch/, /40.*damage.*switch moves/] },
+    { id: "quick-claw", name: "Quick Claw", aliases: ["quick claw", "garra rapida", "griffe rapide", "rapidartigli"], effects: [/cooldown on all moves/, /20 cooldown/, /reduce.*cooldown/] },
+    { id: "focus-sash", name: "Focus Sash", aliases: ["focus sash", "banda focus", "ceinture force", "faixa focus"], effects: [/leaves you at 1 hp/, /hit.*knock you out.*1 hp/] },
+    { id: "shell-bell", name: "Shell Bell", aliases: ["shell bell", "campana concha", "coquille sable", "conchinella"], effects: [/heal from the damage you deal/, /heal.*damage you deal/] },
+    { id: "amulet-coin", name: "Amulet Coin", aliases: ["amulet coin", "moneda amuleto", "piece rune", "moeda amuleto"], effects: [/50 pokecoins/, /pokecoins at the end/, /coin.*end of the run/] },
+    { id: "lucky-egg", name: "Lucky Egg", aliases: ["lucky egg", "huevo suerte", "oeuf chance", "fortunuovo", "ovo sorte"], effects: [/30 experience/, /experience/, /experiencia/] },
+    { id: "life-orb", name: "Life Orb", aliases: ["life orb", "vidasfera", "orbe vie", "orbe da vida"], effects: [/30 damage.*attack costs/, /each attack costs.*hp/, /attacks cost.*hp/] },
+    { id: "choice-scarf", name: "Choice Scarf", aliases: ["choice scarf", "panuelo elegido", "mouchoir choix", "stolascelta", "lenco escolha"], effects: [/35 speed/, /35.*speed/] },
+    { id: "rocky-helmet", name: "Rocky Helmet", aliases: ["rocky helmet", "casco dentado", "casque brut", "casco duro"], effects: [/foes that hit you in melee take damage/, /enemies that hit you in melee/] },
+    { id: "assault-vest", name: "Assault Vest", aliases: ["assault vest", "chaleco asalto", "veste combat", "corpetto assalto", "colete assalto"], effects: [/20 damage reduction/, /damage reduction/] }
+  ];
 
   const state = {
     pokemon: "",
@@ -26,11 +40,13 @@
     autoPick: true,
     autoBuildFromMoveset: false,
     autoBondFromMoveset: false,
+    autoPickItems: true,
     targets: [],
     partnerBuild: null,
     learnedMoves: [],
     fusedGroups: [],
     statPicks: [],
+    heldItem: "",
     lastLevel: 0
   };
   let pokemonData = [];
@@ -51,6 +67,12 @@
   let bondPendingSecondMove = "";
   let bondPendingStartedAt = 0;
   let bondManualOverride = false;
+  let isItemVisible = false;
+  let itemAutoTimer = null;
+  let itemWatchdogTimer = null;
+  let itemAttemptSignature = "";
+  let pendingItemName = "";
+  let itemManualOverride = false;
   let lastBuildFetchPokemon = "";
   let buildFetchInFlight = "";
   let lastTrackedSelectionSignature = "";
@@ -103,6 +125,11 @@
         <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ</span></label>
         <p id="psba-auto-status" class="muted auto-status">Tự chọn theo điểm; nếu chênh không quá 6 điểm thì ưu tiên move set hoặc skill mục tiêu.</p>
 
+        <div class="section-title"><span>Item phù hợp cho lượt này</span><small id="psba-item-label">chờ item</small></div>
+        <div id="psba-item-recommendations" class="recommendations"><p class="muted">Khi item xuất hiện, extension sẽ xếp hạng theo Partner và move set.</p></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-items" type="checkbox"> Tự chọn item</span></label>
+        <p id="psba-item-status" class="muted auto-status">Đang ưu tiên hiệu quả cho Partner/build hiện tại.</p>
+
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
         <div class="owned-row">
@@ -129,6 +156,10 @@
     strategy: shadow.querySelector("#psba-strategy"),
     autoPick: shadow.querySelector("#psba-auto-pick"),
     autoStatus: shadow.querySelector("#psba-auto-status"),
+    autoItems: shadow.querySelector("#psba-auto-items"),
+    itemStatus: shadow.querySelector("#psba-item-status"),
+    itemLabel: shadow.querySelector("#psba-item-label"),
+    itemRecommendations: shadow.querySelector("#psba-item-recommendations"),
     autoBuild: shadow.querySelector("#psba-auto-build"),
     buildModeStatus: shadow.querySelector("#psba-build-mode-status"),
     autoBond: shadow.querySelector("#psba-auto-bond"),
@@ -168,6 +199,18 @@
     persistState();
     refreshRecommendations();
   });
+  ui.autoItems.addEventListener("change", () => {
+    state.autoPickItems = ui.autoItems.checked;
+    if (itemAutoTimer) clearTimeout(itemAutoTimer);
+    itemAutoTimer = null;
+    itemAttemptSignature = "";
+    itemManualOverride = false;
+    persistState();
+    ui.itemStatus.textContent = state.autoPickItems
+      ? "Đang tự chọn item theo hiệu quả ước tính cho Partner/build."
+      : "Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.";
+    updateItemState();
+  });
   ui.autoBuild.addEventListener("change", () => {
     state.autoBuildFromMoveset = Boolean(ui.autoBuild.checked && hasPartnerBuildForCurrentPokemon());
     ui.autoBuild.checked = state.autoBuildFromMoveset;
@@ -205,21 +248,25 @@
   });
   shadow.querySelector("#psba-reset").addEventListener("click", resetRun);
   ui.autoPick.checked = state.autoPick;
+  ui.autoItems.checked = state.autoPickItems;
 
   const cardsRoot = document.querySelector("#cards");
   const bondCardsRoot = document.querySelector("#bond-cards");
+  const itemCardsRoot = document.querySelector("#item-cards");
   cardsRoot.addEventListener("click", onGameCardClick, true);
   bondCardsRoot?.addEventListener("click", onGameBondCardClick, true);
+  itemCardsRoot?.addEventListener("click", onGameItemCardClick, true);
   document.addEventListener("keydown", onGameLevelUpKeydown, true);
   const observer = new MutationObserver(() => {
     observePartnerName();
     updateLevelUpState();
     updateBondState();
+    updateItemState();
     updateGameOverState();
   });
-  for (const selector of ["#cards", "#scr-levelup", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
+  for (const selector of ["#cards", "#scr-levelup", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-item", "#item-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
     const element = document.querySelector(selector);
-    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move"] });
+    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move", "data-item", "title", "aria-label"] });
   }
 
   setPanelOpen(false);
@@ -228,6 +275,7 @@
   observePartnerName();
   updateLevelUpState();
   updateBondState();
+  updateItemState();
   updateGameOverState();
 
   function normalize(value) {
@@ -250,6 +298,7 @@
       autoPick: state.autoPick,
       autoBuildFromMoveset: state.autoBuildFromMoveset,
       autoBondFromMoveset: state.autoBondFromMoveset,
+      autoPickItems: state.autoPickItems,
       targets: [...state.targets],
       partnerBuild: state.partnerBuild ? {
         pokemon: state.partnerBuild.pokemon,
@@ -261,6 +310,7 @@
       learnedMoves: state.learnedMoves.map((move) => ({ ...move })),
       fusedGroups: state.fusedGroups.map((group) => [...group]),
       statPicks: [...state.statPicks],
+      heldItem: state.heldItem,
       lastLevel: state.lastLevel
     };
   }
@@ -276,6 +326,7 @@
         state.autoPick = value.autoPick === undefined ? true : Boolean(value.autoPick);
         state.autoBuildFromMoveset = Boolean(value.autoBuildFromMoveset);
         state.autoBondFromMoveset = Boolean(value.autoBondFromMoveset);
+        state.autoPickItems = value.autoPickItems === undefined ? true : Boolean(value.autoPickItems);
         state.targets = Array.isArray(value.targets) ? value.targets.filter((item) => typeof item === "string") : [];
         state.partnerBuild = value.partnerBuild && typeof value.partnerBuild.pokemon === "string" && Array.isArray(value.partnerBuild.moves)
           ? {
@@ -299,6 +350,7 @@
           ? value.fusedGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, MAX_MOVE_SLOTS)
           : [];
         state.statPicks = Array.isArray(value.statPicks) ? value.statPicks.filter((item) => typeof item === "string").slice(-12) : [];
+        state.heldItem = typeof value.heldItem === "string" ? value.heldItem : "";
         state.lastLevel = Number.isFinite(Number(value.lastLevel)) ? Number(value.lastLevel) : 0;
         if (!hasPartnerBuildForCurrentPokemon()) {
           state.autoBuildFromMoveset = false;
@@ -390,6 +442,7 @@
     ui.pokemon.value = state.pokemon;
     ui.strategy.value = state.strategy;
     ui.autoPick.checked = state.autoPick;
+    ui.autoItems.checked = state.autoPickItems;
     renderTypes();
     renderTargets();
     renderBuild();
@@ -756,9 +809,11 @@
     lastTrackedSelectionSignature = "";
     lastTrackedSelectionAt = 0;
     clearBondTracking();
+    clearItemTracking();
     state.learnedMoves = [];
     state.fusedGroups = [];
     state.statPicks = [];
+    state.heldItem = "";
     state.lastLevel = 0;
     renderBuild();
   }
@@ -1492,6 +1547,307 @@
     bondManualOverride = false;
   }
 
+  function itemCardNodes() {
+    if (!itemCardsRoot) return [];
+    const cardClassNodes = Array.from(itemCardsRoot.querySelectorAll(".card"));
+    if (cardClassNodes.length) return cardClassNodes;
+    const buttons = Array.from(itemCardsRoot.querySelectorAll('button, [role="button"]'));
+    if (buttons.length) return buttons;
+    return Array.from(itemCardsRoot.children).filter((node) => node instanceof HTMLElement);
+  }
+
+  function itemDefinitionFromText(text) {
+    const normalizedText = normalize(text);
+    return ITEM_DEFINITIONS.find((item) => item.aliases.some((alias) => normalizedText.includes(normalize(alias)))
+      || item.effects.some((pattern) => pattern.test(normalizedText))) || null;
+  }
+
+  function itemCandidateFromCard(card) {
+    const parts = [card.innerText || card.textContent || ""];
+    const attributes = [];
+    for (const element of [card, ...card.querySelectorAll("[data-id], [data-item], [title], [aria-label]")]) {
+      for (const attribute of ["data-id", "data-item", "title", "aria-label"]) {
+        const value = element.getAttribute?.(attribute);
+        if (value) attributes.push(value);
+      }
+    }
+    const fullText = `${parts.join(" ")} ${attributes.join(" ")}`;
+    const normalizedText = normalize(fullText);
+    const item = itemDefinitionFromText(fullText);
+    const action = /\b(keep|mantener|conservar)\b/.test(normalizedText)
+      ? "keep"
+      : /\b(switch to|replace|cambiar a|sustituir por)\b/.test(normalizedText) ? "switch" : "choose";
+    return {
+      element: card,
+      text: (card.innerText || card.textContent || "").trim().replace(/\s+/g, " "),
+      normalizedText,
+      item,
+      action
+    };
+  }
+
+  function itemCandidates() {
+    return itemCardNodes().map(itemCandidateFromCard).filter((candidate) => candidate.text || candidate.normalizedText);
+  }
+
+  function itemBuildFacts() {
+    const entries = [];
+    const appendMove = (name, level = 1) => {
+      const move = getMoveData(name);
+      if (!move || entries.some((entry) => normalize(entry.move.name) === normalize(move.name))) return;
+      entries.push({ move, level });
+    };
+    for (const learned of state.learnedMoves) appendMove(learned.name, Number(learned.level) || 1);
+    if (!entries.length || (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon())) {
+      for (const planned of state.partnerBuild?.moves || []) appendMove(planned.name, 1);
+    }
+    const profiles = entries.map(({ move, level }) => ({
+      move,
+      level,
+      profile: moveProfile(move),
+      rapid: /several times|multiple times|many times|repeatedly|rapidly|spin in place|hits everything/.test(normalize(move.description))
+    }));
+    const attacks = profiles.filter((entry) => !entry.profile.isBuff && !entry.profile.control);
+    return {
+      source: state.learnedMoves.length ? "skill đã học" : hasPartnerBuildForCurrentPokemon() ? "move set Partner" : "hướng build",
+      moves: profiles,
+      attacks,
+      areaAttacks: attacks.filter((entry) => entry.profile.area).length,
+      rapidAttacks: attacks.filter((entry) => entry.rapid).length,
+      hasSustain: profiles.some((entry) => entry.profile.sustain),
+      topLevel: Math.max(0, ...profiles.map((entry) => entry.level)),
+      armorPicks: state.statPicks.filter((item) => ["armor", "vigor", "synthesis"].includes(normalize(item))).length,
+      sprintPicks: state.statPicks.filter((item) => normalize(item) === "sprint").length
+    };
+  }
+
+  function scoreItemCandidate(candidate, facts = itemBuildFacts()) {
+    const item = candidate.item;
+    if (!item) return { ...candidate, score: null, reasons: [], recognized: false };
+    const score = { value: 0, reasons: [] };
+    const add = (value, reason) => {
+      score.value += value;
+      if (reason) score.reasons.push(reason);
+    };
+    const attackCount = facts.attacks.length;
+    const strategyIsSurvival = state.strategy === "survival";
+    switch (item.id) {
+      case "quick-claw":
+        add(15 + Math.min(6, attackCount * 2), "giảm hồi chiêu cho toàn bộ move đang dùng");
+        if (facts.rapidAttacks) add(Math.min(4, facts.rapidAttacks * 2), "hợp build có đòn đánh lặp/đánh nhiều lần");
+        break;
+      case "lucky-egg":
+        add(12, "tăng EXP để lên cấp và hoàn thiện build sớm hơn");
+        if (state.lastLevel < 12) add(5, "run còn ở giai đoạn đầu");
+        else if (state.lastLevel > 30) add(-3, "run đã ở giai đoạn muộn");
+        break;
+      case "shell-bell":
+        add(7 + Math.min(10, attackCount * 2), "hồi phục dựa trên sát thương gây ra");
+        if (facts.rapidAttacks) add(Math.min(6, facts.rapidAttacks * 3), "hợp move đánh nhiều lần");
+        if (facts.hasSustain) add(2, "cộng thêm khả năng trụ lâu cho build có hồi phục");
+        break;
+      case "choice-band":
+        add(11, "tăng sát thương mạnh cho build tập trung tấn công");
+        if (attackCount <= 1) add(12, "move set có một đòn chủ lực, ít cần đổi move");
+        else if (attackCount === 2) add(4, "build có ít đòn tấn công để luân phiên");
+        else add(-8, "build nhiều đòn tấn công sẽ bị hạn chế đổi move");
+        if (facts.topLevel >= 3) add(3, "đòn chủ lực đã được nâng cấp");
+        break;
+      case "life-orb":
+        add(10 + Math.min(8, attackCount * 2), "tăng sát thương cho các move gây damage");
+        if (facts.rapidAttacks) add(Math.min(4, facts.rapidAttacks * 2), "hợp build có đòn đánh liên tục");
+        if (strategyIsSurvival) add(-6, "đổi một phần khả năng trụ lâu lấy sát thương");
+        if (facts.hasSustain) add(4, "build hiện tại có hồi phục để bù hao HP");
+        break;
+      case "leftovers":
+        add(11, "hồi HP liên tục trong cả lượt");
+        if (strategyIsSurvival) add(7, "khớp hướng build Sinh tồn");
+        if (!facts.hasSustain) add(3, "bổ sung hồi phục cho build chưa có sustain");
+        break;
+      case "assault-vest":
+        add(11, "giảm damage nhận vào ổn định");
+        if (strategyIsSurvival) add(8, "khớp hướng build Sinh tồn");
+        add(Math.min(4, facts.armorPicks * 2), "ăn khớp các chỉ số chống chịu đã chọn");
+        break;
+      case "focus-sash":
+        add(9, "chống một đòn kết liễu theo chu kỳ");
+        if (strategyIsSurvival) add(7, "khớp hướng build Sinh tồn");
+        break;
+      case "rocky-helmet":
+        add(7, "phản sát thương khi đối thủ đánh cận chiến");
+        if (strategyIsSurvival) add(6, "hợp lối chơi chịu đòn và áp sát");
+        add(Math.min(6, facts.areaAttacks * 2), "move diện rộng hỗ trợ giữ vị trí gần nhiều đối thủ");
+        break;
+      case "choice-scarf":
+        add(9, "tăng tốc độ để né đám đông và đổi vị trí");
+        add(Math.min(4, facts.sprintPicks * 2), "ăn khớp chỉ số Sprint đã chọn");
+        if (strategyIsSurvival) add(2, "tăng cơ động cho hướng Sinh tồn");
+        break;
+      case "amulet-coin":
+        add(4, "tăng PokéCoins nhận được khi kết thúc lượt");
+        if (state.lastLevel >= 20) add(4, "run đã tiến sâu nên phần thưởng cuối lượt có thể cao hơn");
+        break;
+      default:
+        return { ...candidate, score: null, reasons: [], recognized: false };
+    }
+    if (candidate.action === "keep" && state.heldItem && normalize(state.heldItem) === normalize(item.name)) {
+      add(1, "giữ item hiện tại, không mất hiệu ứng đang có");
+    }
+    return { ...candidate, score: score.value, reasons: score.reasons, recognized: true, itemName: item.name, buildSource: facts.source };
+  }
+
+  function itemCandidateSignature(candidates) {
+    return candidates.map((candidate) => `${candidate.item?.id || "unknown"}:${candidate.action}:${candidate.normalizedText}`).join("||");
+  }
+
+  function renderItemRecommendations(ranked) {
+    ui.itemRecommendations.replaceChildren();
+    if (!ranked.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = isItemVisible ? "Đang chờ nội dung item để xếp hạng." : state.heldItem ? `Item hiện tại: ${state.heldItem}.` : "Khi item xuất hiện, extension sẽ xếp hạng theo Partner và move set.";
+      ui.itemRecommendations.append(empty);
+      ui.itemLabel.textContent = state.heldItem || (isItemVisible ? "đang đọc" : "chờ item");
+      return;
+    }
+    const recognized = ranked.filter((candidate) => candidate.recognized);
+    ui.itemLabel.textContent = isItemVisible ? "đang chọn" : state.heldItem || "gợi ý";
+    for (const [index, candidate] of recognized.slice(0, 2).entries()) {
+      const row = document.createElement("div");
+      row.className = `recommendation ${index === 0 ? "best" : ""}`;
+      const title = document.createElement("div");
+      title.className = "recommendation-head";
+      const name = document.createElement("strong");
+      name.textContent = `${candidate.action === "keep" ? "Giữ" : candidate.action === "switch" ? "Đổi sang" : "Chọn"} ${candidate.itemName}`;
+      const score = document.createElement("span");
+      score.className = "score";
+      score.textContent = `${candidate.score}đ`;
+      title.append(name, score);
+      const reason = document.createElement("p");
+      reason.textContent = candidate.reasons.slice(0, 3).join(" · ");
+      row.append(title, reason);
+      ui.itemRecommendations.append(row);
+    }
+    if (!recognized.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Chưa nhận diện được các item trong lựa chọn hiện tại.";
+      ui.itemRecommendations.append(empty);
+    }
+  }
+
+  function updateItemState() {
+    const visible = itemScreenVisible();
+    if (!visible) {
+      if (isItemVisible) {
+        if (pendingItemName) {
+          state.heldItem = pendingItemName;
+          persistState();
+          ui.itemStatus.textContent = `Đã ghi nhận item trong lượt: ${state.heldItem}.`;
+        }
+        clearItemTracking();
+        isItemVisible = false;
+        renderItemRecommendations([]);
+        if (!isLevelUpVisible && !isBondVisible) setPanelOpen(false);
+      }
+      return;
+    }
+    if (!isItemVisible) {
+      isItemVisible = true;
+      itemManualOverride = false;
+      itemAttemptSignature = "";
+      setPanelOpen(true);
+    }
+    const candidates = itemCandidates();
+    const facts = itemBuildFacts();
+    const ranked = candidates.map((candidate) => scoreItemCandidate(candidate, facts)).sort((a, b) => {
+      if (a.recognized !== b.recognized) return a.recognized ? -1 : 1;
+      return (b.score ?? -Infinity) - (a.score ?? -Infinity);
+    });
+    renderItemRecommendations(ranked);
+    if (pendingItemName || itemManualOverride) return;
+    if (!state.autoPickItems) {
+      ui.itemStatus.textContent = "Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.";
+      return;
+    }
+    if (candidates.length < 2) {
+      ui.itemStatus.textContent = "Đang chờ đủ lựa chọn item để so sánh.";
+      return;
+    }
+    if (ranked.some((candidate) => !candidate.recognized)) {
+      ui.itemStatus.textContent = "Có item chưa nhận diện; extension tạm dừng tự chọn để tránh bấm nhầm.";
+      return;
+    }
+    const best = ranked[0];
+    if (!best?.item || !best.element?.isConnected) {
+      ui.itemStatus.textContent = "Chưa đọc được item hợp lệ để chọn.";
+      return;
+    }
+    const signature = itemCandidateSignature(candidates);
+    if (itemAutoTimer || itemAttemptSignature === signature) return;
+    itemAttemptSignature = signature;
+    ui.itemStatus.textContent = `Sẽ ${best.action === "keep" ? "giữ" : "chọn"} ${best.itemName} theo ${best.buildSource} — ${best.reasons[0] || "điểm phù hợp cao nhất"}.`;
+    itemAutoTimer = setTimeout(() => {
+      itemAutoTimer = null;
+      const currentCandidates = itemCandidates();
+      const currentSignature = itemCandidateSignature(currentCandidates);
+      const currentRanked = currentCandidates.map((candidate) => scoreItemCandidate(candidate, itemBuildFacts())).sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+      const currentBest = currentRanked[0];
+      if (!state.autoPickItems || !itemScreenVisible() || !isItemVisible || itemManualOverride || currentSignature !== signature || !currentBest?.element?.isConnected || normalize(currentBest.itemName) !== normalize(best.itemName)) {
+        itemAttemptSignature = "";
+        updateItemState();
+        return;
+      }
+      pendingItemName = currentBest.itemName;
+      currentBest.element.click();
+      ui.itemStatus.textContent = `Đã bấm ${currentBest.itemName}; đang chờ game xác nhận lựa chọn.`;
+      if (itemWatchdogTimer) clearTimeout(itemWatchdogTimer);
+      itemWatchdogTimer = setTimeout(() => {
+        itemWatchdogTimer = null;
+        if (itemScreenVisible() && pendingItemName) {
+          pendingItemName = "";
+          ui.itemStatus.textContent = `Game chưa nhận click ${currentBest.itemName}; hãy chọn item thủ công.`;
+        }
+      }, 1800);
+    }, AUTO_ITEM_DELAY_MS);
+  }
+
+  function itemScreenVisible() {
+    const screen = document.querySelector("#scr-item");
+    return Boolean(screen && !screen.classList.contains("hidden") && getComputedStyle(screen).display !== "none");
+  }
+
+  function recordManualItemChoice(candidate) {
+    if (!candidate) return;
+    if (itemAutoTimer) clearTimeout(itemAutoTimer);
+    if (itemWatchdogTimer) clearTimeout(itemWatchdogTimer);
+    itemAutoTimer = null;
+    itemWatchdogTimer = null;
+    itemAttemptSignature = "";
+    itemManualOverride = true;
+    pendingItemName = candidate.item?.name || "";
+    ui.itemStatus.textContent = candidate.item
+      ? `Đã nhận lựa chọn thủ công: ${candidate.action === "keep" ? "giữ" : "chọn"} ${candidate.item.name}.`
+      : "Item chưa nhận diện; extension không ghi nhận tên item này.";
+  }
+
+  function onGameItemCardClick(event) {
+    if (!event.isTrusted) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const card = target?.closest("#item-cards .card") || target?.closest('#item-cards button, #item-cards [role="button"]') || target?.closest("#item-cards > *");
+    if (card) recordManualItemChoice(itemCandidateFromCard(card));
+  }
+
+  function clearItemTracking() {
+    if (itemAutoTimer) clearTimeout(itemAutoTimer);
+    if (itemWatchdogTimer) clearTimeout(itemWatchdogTimer);
+    itemAutoTimer = null;
+    itemWatchdogTimer = null;
+    itemAttemptSignature = "";
+    pendingItemName = "";
+    itemManualOverride = false;
+  }
+
   function markMovesFused(names) {
     const normalizedNames = names.map(normalize);
     const involved = state.fusedGroups.filter((group) => group.some((name) => normalizedNames.includes(normalize(name))));
@@ -1649,6 +2005,12 @@
     if (event.composedPath().includes(host)) return;
     const target = event.target;
     if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (isItemVisible) {
+      const itemIndex = { "1": 0, "2": 1 }[event.key];
+      const itemCandidate = itemIndex === undefined ? null : itemCandidates()[itemIndex];
+      if (itemCandidate && event.isTrusted) recordManualItemChoice(itemCandidate);
+      return;
+    }
     if (isBondVisible) {
       const bondIndex = { "1": 0, "2": 1, "3": 2, "4": 3 }[event.key];
       const bondCandidate = bondIndex === undefined ? null : bondCandidates()[bondIndex];
