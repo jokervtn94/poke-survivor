@@ -11,6 +11,8 @@
   const AUTO_PICK_DELAY_MS = 750;
   const AUTO_BOND_DELAY_MS = 500;
   const AUTO_ITEM_DELAY_MS = 600;
+  const DODGE_SCAN_INTERVAL_MS = 160;
+  const DODGE_MOVE_PULSE_MS = 220;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const STRATEGIES = {
     balanced: "Cân bằng",
@@ -77,6 +79,13 @@
   let buildFetchInFlight = "";
   let lastTrackedSelectionSignature = "";
   let lastTrackedSelectionAt = 0;
+  let autoDodgeEnabled = false;
+  let dodgeScanTimer = null;
+  let dodgeMoveTimer = null;
+  let dodgeHeldKeys = [];
+  let dodgeThreatMissingAt = 0;
+  let dodgeThreatHandled = false;
+  let dodgeManualPauseUntil = 0;
 
   const host = document.createElement("div");
   host.id = "psba-host";
@@ -130,6 +139,10 @@
         <label class="auto-pick-row"><span><input id="psba-auto-items" type="checkbox"> Tự chọn item</span></label>
         <p id="psba-item-status" class="muted auto-status">Đang ưu tiên hiệu quả cho Partner/build hiện tại.</p>
 
+        <div class="section-title"><span>Né boss ở Vách Nứt</span><small>thử nghiệm</small></div>
+        <label class="auto-pick-row"><span><input id="psba-auto-dodge" type="checkbox"> Tự né dải cảnh báo</span></label>
+        <p id="psba-dodge-status" class="muted auto-status">Chỉ bật trong Vách Nứt. Nhận diện dải hồng giao nhau và gửi một nhịp né mỗi đợt.</p>
+
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
         <div class="owned-row">
@@ -158,6 +171,8 @@
     autoStatus: shadow.querySelector("#psba-auto-status"),
     autoItems: shadow.querySelector("#psba-auto-items"),
     itemStatus: shadow.querySelector("#psba-item-status"),
+    autoDodge: shadow.querySelector("#psba-auto-dodge"),
+    dodgeStatus: shadow.querySelector("#psba-dodge-status"),
     itemLabel: shadow.querySelector("#psba-item-label"),
     itemRecommendations: shadow.querySelector("#psba-item-recommendations"),
     autoBuild: shadow.querySelector("#psba-auto-build"),
@@ -211,6 +226,19 @@
       : "Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.";
     updateItemState();
   });
+  ui.autoDodge.addEventListener("change", () => {
+    autoDodgeEnabled = ui.autoDodge.checked;
+    dodgeThreatMissingAt = 0;
+    dodgeThreatHandled = false;
+    dodgeManualPauseUntil = 0;
+    if (autoDodgeEnabled) {
+      ui.dodgeStatus.textContent = "Đang theo dõi cảnh báo dạng dải. Chỉ bật trong Vách Nứt.";
+      startDodgeMonitor();
+    } else {
+      stopDodgeMonitor();
+      ui.dodgeStatus.textContent = "Tự né đang tắt.";
+    }
+  });
   ui.autoBuild.addEventListener("change", () => {
     state.autoBuildFromMoveset = Boolean(ui.autoBuild.checked && hasPartnerBuildForCurrentPokemon());
     ui.autoBuild.checked = state.autoBuildFromMoveset;
@@ -257,6 +285,10 @@
   bondCardsRoot?.addEventListener("click", onGameBondCardClick, true);
   itemCardsRoot?.addEventListener("click", onGameItemCardClick, true);
   document.addEventListener("keydown", onGameLevelUpKeydown, true);
+  document.addEventListener("keydown", onManualMovementKeydown, true);
+  document.addEventListener("keyup", onManualMovementKeyup, true);
+  window.addEventListener("blur", releaseDodgeKeys);
+  document.addEventListener("visibilitychange", onDodgeVisibilityChange);
   const observer = new MutationObserver(() => {
     observePartnerName();
     updateLevelUpState();
@@ -857,6 +889,320 @@
     } else if (!visible) {
       wasGameOver = false;
     }
+  }
+
+  function startDodgeMonitor() {
+    if (dodgeScanTimer) clearInterval(dodgeScanTimer);
+    dodgeScanTimer = setInterval(scanRiftTelegraph, DODGE_SCAN_INTERVAL_MS);
+    scanRiftTelegraph();
+  }
+
+  function stopDodgeMonitor() {
+    if (dodgeScanTimer) clearInterval(dodgeScanTimer);
+    if (dodgeMoveTimer) clearTimeout(dodgeMoveTimer);
+    dodgeScanTimer = null;
+    dodgeMoveTimer = null;
+    dodgeThreatMissingAt = 0;
+    dodgeThreatHandled = false;
+    releaseDodgeKeys();
+  }
+
+  function onDodgeVisibilityChange() {
+    if (document.hidden) releaseDodgeKeys();
+  }
+
+  function onManualMovementKeydown(event) {
+    if (!autoDodgeEnabled || !event.isTrusted || !isMovementKey(event.key)) return;
+    if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
+    dodgeManualPauseUntil = Date.now() + 1200;
+    releaseDodgeKeys();
+    ui.dodgeStatus.textContent = "Đã nhường điều khiển; sẽ tự né lại sau khi bạn ngừng di chuyển.";
+  }
+
+  function onManualMovementKeyup(event) {
+    if (!autoDodgeEnabled || !event.isTrusted || !isMovementKey(event.key)) return;
+    if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
+    dodgeManualPauseUntil = Date.now() + 1200;
+  }
+
+  function isMovementKey(key) {
+    return ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(String(key || "").toLowerCase());
+  }
+
+  function isBlockingRunScreen() {
+    return ["#scr-levelup", "#scr-bond", "#scr-item", "#scr-pause", "#scr-over"].some((selector) => {
+      const screen = document.querySelector(selector);
+      return Boolean(screen && !screen.classList.contains("hidden") && getComputedStyle(screen).display !== "none");
+    });
+  }
+
+  function scanRiftTelegraph() {
+    if (!autoDodgeEnabled) return;
+    if (!document.body.classList.contains("in-run")) {
+      autoDodgeEnabled = false;
+      ui.autoDodge.checked = false;
+      stopDodgeMonitor();
+      ui.dodgeStatus.textContent = "Đã tắt khi rời lượt; bật lại khi đang ở Vách Nứt.";
+      return;
+    }
+    if (document.hidden || isBlockingRunScreen()) {
+      releaseDodgeKeys();
+      ui.dodgeStatus.textContent = document.hidden
+        ? "Tạm dừng khi tab game không hiển thị."
+        : "Đang chờ màn chơi hoạt động; né tự dừng khi mở menu.";
+      return;
+    }
+    if (Date.now() < dodgeManualPauseUntil) {
+      releaseDodgeKeys();
+      return;
+    }
+
+    const canvas = document.querySelector("#game");
+    if (!(canvas instanceof HTMLCanvasElement) || !canvas.width || !canvas.height) {
+      ui.dodgeStatus.textContent = "Chưa đọc được vùng chơi để theo dõi cảnh báo.";
+      return;
+    }
+
+    let imageData;
+    try {
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("2D canvas unavailable");
+      imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    } catch (_error) {
+      releaseDodgeKeys();
+      autoDodgeEnabled = false;
+      ui.autoDodge.checked = false;
+      stopDodgeMonitor();
+      ui.dodgeStatus.textContent = "Canvas game không cho đọc điểm ảnh; tự né đang tạm dừng.";
+      return;
+    }
+
+    const analysis = analyzePinkWarningLines(imageData);
+    if (!analysis || !analysis.focus) {
+      if (!dodgeThreatMissingAt) dodgeThreatMissingAt = Date.now();
+      if (Date.now() - dodgeThreatMissingAt > 650) dodgeThreatHandled = false;
+      releaseDodgeKeys();
+      ui.dodgeStatus.textContent = analysis?.pinkPixels > 80
+        ? "Có hiệu ứng hồng nhưng chưa nhận diện được dải cảnh báo giao nhau."
+        : "Đang chờ dải cảnh báo hồng của boss.";
+      return;
+    }
+    dodgeThreatMissingAt = 0;
+
+    if (!dodgeThreatHandled) {
+      const direction = chooseDodgeDirection(analysis.mask, analysis.width, analysis.height, analysis.focus);
+      if (!direction || direction.score > 0.62) {
+        ui.dodgeStatus.textContent = "Đã thấy dải cảnh báo nhưng chưa có hướng né đủ thoáng; chưa gửi lệnh di chuyển.";
+        return;
+      }
+      dodgeThreatHandled = true;
+      pressDodgeDirection(direction);
+      ui.dodgeStatus.textContent = "Đã phát hiện dải cảnh báo giao nhau; gửi một nhịp né " + direction.label + ".";
+      return;
+    }
+
+    ui.dodgeStatus.textContent = "Đang theo dõi dải cảnh báo; đã gửi một nhịp né cho đợt hiện tại.";
+  }
+
+  function analyzePinkWarningLines(imageData) {
+    const step = Math.max(3, Math.ceil(Math.max(imageData.width, imageData.height) / 320));
+    const width = Math.ceil(imageData.width / step);
+    const height = Math.ceil(imageData.height / step);
+    const mask = new Uint8Array(width * height);
+    const points = [];
+    const data = imageData.data;
+    let pinkPixels = 0;
+
+    for (let gy = 0; gy < height; gy += 1) {
+      const y = Math.min(imageData.height - 1, gy * step + Math.floor(step / 2));
+      for (let gx = 0; gx < width; gx += 1) {
+        const x = Math.min(imageData.width - 1, gx * step + Math.floor(step / 2));
+        const offset = (y * imageData.width + x) * 4;
+        const red = data[offset];
+        const green = data[offset + 1];
+        const blue = data[offset + 2];
+        if (red >= 88 && red - green >= 28 && red - blue >= 10 && green < 176 && blue < 208) {
+          const index = gy * width + gx;
+          mask[index] = 1;
+          points.push({ x: gx, y: gy });
+          pinkPixels += 1;
+        }
+      }
+    }
+
+    if (points.length < 90) return { mask, width, height, pinkPixels, focus: null };
+    const lines = houghWarningLines(points, width, height);
+    if (lines.length < 4) return { mask, width, height, pinkPixels, focus: null };
+    const focus = intersectingLineFocus(lines, width, height);
+    return { mask, width, height, pinkPixels, focus };
+  }
+
+  function houghWarningLines(points, width, height) {
+    const angleStep = 3;
+    const angleCount = 60;
+    const rhoMax = Math.ceil(Math.hypot(width, height));
+    const rhoSize = rhoMax * 2 + 1;
+    const accumulator = new Uint16Array(angleCount * rhoSize);
+    const trig = Array.from({ length: angleCount }, (_value, index) => {
+      const radians = index * angleStep * Math.PI / 180;
+      return { cosine: Math.cos(radians), sine: Math.sin(radians) };
+    });
+    const pointStride = Math.max(1, Math.ceil(points.length / 3600));
+    let sampledPoints = 0;
+
+    for (let p = 0; p < points.length; p += pointStride) {
+      const point = points[p];
+      sampledPoints += 1;
+      for (let angle = 0; angle < angleCount; angle += 1) {
+        const direction = trig[angle];
+        const rho = Math.round(point.x * direction.cosine + point.y * direction.sine) + rhoMax;
+        accumulator[angle * rhoSize + rho] += 1;
+      }
+    }
+
+    const minVotes = Math.max(22, Math.round(sampledPoints * 0.025));
+    const peaks = [];
+    for (let angle = 0; angle < angleCount; angle += 1) {
+      for (let rho = 4; rho < rhoSize - 4; rho += 1) {
+        const votes = accumulator[angle * rhoSize + rho];
+        if (votes < minVotes) continue;
+        let isPeak = true;
+        for (let da = -1; da <= 1 && isPeak; da += 1) {
+          for (let dr = -3; dr <= 3; dr += 1) {
+            if (!da && !dr) continue;
+            const neighborAngle = angle + da;
+            if (neighborAngle < 0 || neighborAngle >= angleCount) continue;
+            if (accumulator[neighborAngle * rhoSize + rho + dr] > votes) {
+              isPeak = false;
+              break;
+            }
+          }
+        }
+        if (isPeak) peaks.push({ angle: angle * angleStep, rho: rho - rhoMax, votes });
+      }
+    }
+
+    peaks.sort((a, b) => b.votes - a.votes);
+    const selected = [];
+    for (const peak of peaks) {
+      const duplicate = selected.some((line) => Math.abs(line.angle - peak.angle) <= 6 && Math.abs(line.rho - peak.rho) <= 5);
+      if (!duplicate) selected.push(peak);
+      if (selected.length >= 18) break;
+    }
+    return selected;
+  }
+
+  function intersectingLineFocus(lines, width, height) {
+    const intersections = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const a = lines[i];
+      const angleA = a.angle * Math.PI / 180;
+      const cosA = Math.cos(angleA);
+      const sinA = Math.sin(angleA);
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const b = lines[j];
+        const angleB = b.angle * Math.PI / 180;
+        const cosB = Math.cos(angleB);
+        const sinB = Math.sin(angleB);
+        const determinant = cosA * sinB - cosB * sinA;
+        if (Math.abs(determinant) < 0.16) continue;
+        const x = (a.rho * sinB - b.rho * sinA) / determinant;
+        const y = (cosA * b.rho - cosB * a.rho) / determinant;
+        if (x < -width * 0.05 || x > width * 1.05 || y < -height * 0.05 || y > height * 1.05) continue;
+        intersections.push({ x, y, weight: a.votes + b.votes });
+      }
+    }
+    if (intersections.length < 5) return null;
+
+    let bestCluster = [];
+    let bestWeight = 0;
+    const radius = Math.max(6, Math.min(width, height) * 0.075);
+    for (const seed of intersections) {
+      const cluster = intersections.filter((point) => Math.hypot(point.x - seed.x, point.y - seed.y) <= radius);
+      const weight = cluster.reduce((sum, point) => sum + point.weight, 0);
+      if (cluster.length > bestCluster.length || (cluster.length === bestCluster.length && weight > bestWeight)) {
+        bestCluster = cluster;
+        bestWeight = weight;
+      }
+    }
+    if (bestCluster.length < 4) return null;
+    const totalWeight = bestCluster.reduce((sum, point) => sum + point.weight, 0);
+    return {
+      x: bestCluster.reduce((sum, point) => sum + point.x * point.weight, 0) / totalWeight,
+      y: bestCluster.reduce((sum, point) => sum + point.y * point.weight, 0) / totalWeight
+    };
+  }
+
+  function chooseDodgeDirection(mask, width, height, focus) {
+    const directions = [
+      { x: 0, y: -1, label: "lên", keys: ["w"] },
+      { x: 1, y: -1, label: "lên-phải", keys: ["w", "d"] },
+      { x: 1, y: 0, label: "phải", keys: ["d"] },
+      { x: 1, y: 1, label: "xuống-phải", keys: ["s", "d"] },
+      { x: 0, y: 1, label: "xuống", keys: ["s"] },
+      { x: -1, y: 1, label: "xuống-trái", keys: ["s", "a"] },
+      { x: -1, y: 0, label: "trái", keys: ["a"] },
+      { x: -1, y: -1, label: "lên-trái", keys: ["w", "a"] }
+    ];
+    const searchDistance = Math.max(18, Math.min(width, height) * 0.27);
+    const corridor = Math.max(2, Math.round(Math.min(width, height) * 0.025));
+    let best = null;
+
+    for (const direction of directions) {
+      const length = Math.hypot(direction.x, direction.y);
+      const dx = direction.x / length;
+      const dy = direction.y / length;
+      const perpendicularX = -dy;
+      const perpendicularY = dx;
+      let danger = 0;
+      let samples = 0;
+      let outside = 0;
+      for (let distance = 5; distance <= searchDistance; distance += 2) {
+        for (let lateral = -corridor; lateral <= corridor; lateral += 2) {
+          const x = Math.round(focus.x + dx * distance + perpendicularX * lateral);
+          const y = Math.round(focus.y + dy * distance + perpendicularY * lateral);
+          if (x < 2 || x >= width - 2 || y < 2 || y >= height - 2) {
+            outside += 1;
+            continue;
+          }
+          samples += 1;
+          if (mask[y * width + x]) danger += 1;
+        }
+      }
+      if (!samples) continue;
+      const score = danger / samples + outside / (samples + outside) * 0.75;
+      if (!best || score < best.score) best = { ...direction, score };
+    }
+    return best;
+  }
+
+  function pressDodgeDirection(direction) {
+    releaseDodgeKeys();
+    dodgeHeldKeys = [...direction.keys];
+    for (const key of dodgeHeldKeys) dispatchMovementKey("keydown", key);
+    if (dodgeMoveTimer) clearTimeout(dodgeMoveTimer);
+    dodgeMoveTimer = setTimeout(releaseDodgeKeys, DODGE_MOVE_PULSE_MS);
+  }
+
+  function dispatchMovementKey(type, key) {
+    const codeByKey = { w: "KeyW", a: "KeyA", s: "KeyS", d: "KeyD" };
+    const keyCodeByKey = { w: 87, a: 65, s: 83, d: 68 };
+    document.dispatchEvent(new KeyboardEvent(type, {
+      key,
+      code: codeByKey[key],
+      keyCode: keyCodeByKey[key],
+      which: keyCodeByKey[key],
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    }));
+  }
+
+  function releaseDodgeKeys() {
+    if (dodgeMoveTimer) clearTimeout(dodgeMoveTimer);
+    dodgeMoveTimer = null;
+    for (const key of dodgeHeldKeys) dispatchMovementKey("keyup", key);
+    dodgeHeldKeys = [];
   }
 
   function cardNodes() {

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.5",
-  "description": "Gợi ý build Partner, tự chọn thẻ, item và ghép Bond theo move set.",
+  "version": "0.3.6",
+  "description": "Gợi ý build Partner, tự chọn skill, item, Bond và né cảnh báo boss trong Vách Nứt.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [
