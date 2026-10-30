@@ -949,9 +949,10 @@
 
   function isLevelUpPromptVisible() {
     if (isScreenVisible(document.querySelector("#scr-levelup"))) return true;
-    const cardsRoot = document.querySelector("#cards");
-    if (!isElementRendered(cardsRoot)) return false;
-    return cardNodes().filter(isElementRendered).length >= 2;
+    // Some game layouts collapse the cards container while its choice cards
+    // remain positioned and visible. Check the choices themselves instead of
+    // requiring the parent container to have a non-zero bounding box.
+    return cardNodes().filter((card) => isElementRendered(card) && Boolean((card.innerText || card.textContent || "").trim())).length >= 2;
   }
 
   function openMissionsFromGameMenu() {
@@ -1514,13 +1515,16 @@
   }
 
   function cardNodes() {
-    const cardsRoot = document.querySelector("#cards");
-    if (!cardsRoot) return [];
+    const cardsRoot = document.querySelector("#cards") || document.querySelector("#scr-levelup .cards");
+    if (!cardsRoot) return Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
     const cardClassNodes = Array.from(cardsRoot.querySelectorAll(".card"));
     if (cardClassNodes.length >= 2) return cardClassNodes;
     const buttons = Array.from(cardsRoot.querySelectorAll('button, [role="button"]'));
     if (buttons.length >= 2) return buttons;
-    return Array.from(cardsRoot.children).filter((node) => node instanceof HTMLElement);
+    const children = Array.from(cardsRoot.children).filter((node) => node instanceof HTMLElement);
+    if (children.length >= 2) return children;
+    const levelUpCards = Array.from(document.querySelectorAll("#scr-levelup .card, #scr-levelup button, #scr-levelup [role='button']"));
+    return levelUpCards.length >= 2 ? levelUpCards : children;
   }
 
   function candidateFromCard(card) {
@@ -1747,6 +1751,7 @@
 
   function rankCurrentCandidates() {
     return cardNodes()
+      .filter((card) => isElementRendered(card) && Boolean((card.innerText || card.textContent || "").trim()))
       .map((card, choiceIndex) => ({ ...candidateFromCard(card), choiceIndex }))
       .filter((candidate) => candidate.text)
       .map(scoreCandidate)
