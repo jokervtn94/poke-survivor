@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.14",
-  "description": "Gợi ý TM cho Partner; tự xử lý Missions và Gacha sau mỗi ván.",
+  "version": "0.3.15",
+  "description": "Gợi ý và tự chọn thẻ theo Pokémon; theo dõi skill, Missions, Gacha và build TM cho Partner.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [

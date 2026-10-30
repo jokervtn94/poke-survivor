@@ -17,8 +17,8 @@
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
   const MAX_MOVES_WITH_BONDS = 16;
-  const EXTENSION_VERSION = "0.3.14";
-  const AUTO_PICK_DELAY_MS = 1250;
+  const EXTENSION_VERSION = "0.3.15";
+  const AUTO_PICK_DELAY_MS = 750;
   const AUTO_PICK_RETRY_MS = 180;
   const AUTO_PICK_MAX_RETRIES = 16;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
@@ -55,8 +55,6 @@
   let autoPickTimer = null;
   let autoPickSignature = "";
   let pendingAutoPickSignature = "";
-  let lastObservedLevelText = document.querySelector("#lvl-num")?.textContent?.trim() || "";
-  let levelUpSignalUntil = 0;
   let lastTrackedSelectionSignature = "";
   let lastTrackedSelectionAt = 0;
   let missionCheckTimer = null;
@@ -325,8 +323,7 @@
   window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
     const rootsChanged = refreshObservedGameRoots(observer);
-    const offer = getActiveLevelUpCards();
-    const visible = offer.length >= 2;
+    const visible = isLevelUpPromptVisible();
     const fingerprint = `${visible}:${visible ? cardSelectionSignature() : ""}`;
     if (!rootsChanged && fingerprint === lastLevelUpPollFingerprint && visible === isLevelUpVisible) return;
     lastLevelUpPollFingerprint = fingerprint;
@@ -714,8 +711,6 @@
     autoPickTimer = null;
     pendingAutoPickSignature = "";
     autoPickSignature = "";
-    levelUpSignalUntil = 0;
-    lastObservedLevelText = "";
     lastTrackedSelectionSignature = "";
     lastTrackedSelectionAt = 0;
     state.learnedMoves = [];
@@ -954,37 +949,10 @@
   }
 
   function isLevelUpPromptVisible() {
-    refreshLevelUpSignal();
-    return getActiveLevelUpCards().length >= 2;
-  }
-
-  // The game renders its live level-up choices as div.card children of #cards.
-  // Use those visible nodes as the source of truth instead of a cached overlay
-  // flag or translated body text; both can lag the actual offer during UI transitions.
-  function getActiveLevelUpCards() {
     const screen = document.querySelector("#scr-levelup");
-    if (!screen?.isConnected || screen.hidden || screen.classList.contains("hidden")) return [];
-    if (screen.getAttribute("aria-hidden") === "true") return [];
-    const screenStyle = getComputedStyle(screen);
-    if (screenStyle.display === "none" || screenStyle.visibility === "hidden") return [];
-
-    return cardNodes().filter((card) => {
-      if (!card?.isConnected || card.hidden || !(card.innerText || card.textContent || "").trim()) return false;
-      for (let ancestor = card; ancestor instanceof HTMLElement; ancestor = ancestor.parentElement) {
-        const style = getComputedStyle(ancestor);
-        if (ancestor.hidden || style.display === "none" || style.visibility === "hidden") return false;
-        if (ancestor === screen) return true;
-      }
-      return false;
-    });
-  }
-
-  function refreshLevelUpSignal() {
-    const currentLevelText = document.querySelector("#lvl-num")?.textContent?.trim() || "";
-    if (currentLevelText && currentLevelText !== lastObservedLevelText) {
-      lastObservedLevelText = currentLevelText;
-      levelUpSignalUntil = Date.now() + 8000;
-    }
+    // Restored from the known-good v0.3.2 detector: the game controls this
+    // screen's `hidden` class and display state. Do not gate it on card geometry.
+    return Boolean(screen && !screen.classList.contains("hidden") && getComputedStyle(screen).display !== "none");
   }
 
   function openMissionsFromGameMenu() {
@@ -1547,13 +1515,11 @@
   }
 
   function cardNodes() {
-    // #cards is the game's canonical level-up choice list. Scope to it so
-    // controls such as the Reroll button cannot be mistaken for skill cards.
     const cardsRoot = document.querySelector("#cards");
     if (!cardsRoot) return [];
-    const directCards = Array.from(cardsRoot.children).filter((node) => node instanceof HTMLElement && node.classList.contains("card"));
-    if (directCards.length >= 2) return directCards;
-    const cardClassNodes = Array.from(cardsRoot.querySelectorAll(":scope > .card"));
+    // Match v0.3.2: read the game's .card nodes from #cards without extra
+    // visibility or geometry filters.
+    const cardClassNodes = Array.from(cardsRoot.querySelectorAll(".card"));
     if (cardClassNodes.length >= 2) return cardClassNodes;
     const buttons = Array.from(cardsRoot.querySelectorAll('button, [role="button"]'));
     if (buttons.length >= 2) return buttons;
@@ -1780,16 +1746,14 @@
     });
     renderRecommendations(cachedCandidates, hasClearRecommendation);
     const level = document.querySelector("#lvl-num")?.textContent?.trim();
-    const offerActive = getActiveLevelUpCards().length >= 2;
-    ui.level.textContent = offerActive ? `Level ${level || "?"} · ${getActiveLevelUpCards().length} thẻ` : "chờ thẻ";
+    ui.level.textContent = isLevelUpVisible ? `Level ${level || "?"}` : "chờ thẻ";
     scheduleAutoPick(cachedCandidates);
   }
 
   function rankCurrentCandidates() {
-    // Read the active offer directly from #scr-levelup > #cards. This avoids
-    // relying on a stale isLevelUpVisible value when the game's class changes
-    // and card creation arrive in separate mutations.
-    return getActiveLevelUpCards()
+    // Match v0.3.2: always parse the canonical #cards list. The level-up screen
+    // controls when recommendations are shown and when the top card is chosen.
+    return cardNodes()
       .map((card, choiceIndex) => ({ ...candidateFromCard(card), choiceIndex }))
       .filter((candidate) => candidate.text)
       .map(scoreCandidate)
@@ -1810,12 +1774,11 @@
   function scheduleAutoPick(candidates) {
     const cardSignature = cardSelectionSignature();
     const planSignature = scoredCandidateSignature(candidates);
-    const offerActive = getActiveLevelUpCards().length >= 2;
-    if (!state.autoPick || !offerActive) {
+    if (!state.autoPick || !isLevelUpVisible) {
       if (autoPickTimer) clearTimeout(autoPickTimer);
       autoPickTimer = null;
       pendingAutoPickSignature = "";
-      ui.autoStatus.textContent = state.autoPick ? "Đang dò trực tiếp #scr-levelup và #cards." : "Tự chọn đang tắt; extension vẫn xếp hạng và theo dõi lựa chọn.";
+      ui.autoStatus.textContent = state.autoPick ? "Đang chờ lần lên cấp tiếp theo." : "Tự chọn đang tắt; extension vẫn xếp hạng và theo dõi lựa chọn.";
       return;
     }
     if (autoPickTimer && pendingAutoPickSignature === planSignature) return;
@@ -1842,7 +1805,7 @@
         autoPickTimer = null;
         pendingAutoPickSignature = "";
         const currentCandidates = rankCurrentCandidates();
-        if (!state.autoPick || getActiveLevelUpCards().length < 2 || scoredCandidateSignature(currentCandidates) !== planSignature) return;
+        if (!state.autoPick || !isLevelUpVisible || scoredCandidateSignature(currentCandidates) !== planSignature) return;
         const currentBest = currentCandidates[0];
         if (!currentBest?.element?.isConnected) return;
         if (!isGameCardReady(currentBest.element)) {
@@ -1858,7 +1821,7 @@
 
         currentBest.element.click();
         const currentCardsRoot = document.querySelector("#cards");
-        const accepted = getActiveLevelUpCards().length < 2
+        const accepted = !isLevelUpPromptVisible()
           || currentCardsRoot?.classList.contains("done")
           || Boolean(currentCardsRoot?.querySelector(".selected, .chosen, [aria-selected='true'], [data-selected='true']"))
           || cardSelectionSignature() !== cardSignature;
@@ -1878,7 +1841,6 @@
           return;
         }
         autoPickSignature = cardSignature;
-        levelUpSignalUntil = 0;
         trackGameSelection(currentBest);
         ui.autoStatus.textContent = `Đã tự chọn hạng 1: ${currentBest.move?.name || currentBest.text.slice(0, 32)} (${currentBest.score}đ).`;
         ui.status.textContent = `Game đã nhận thẻ phù hợp nhất cho ${state.pokemon || "Pokémon hiện tại"}.`;
@@ -1891,7 +1853,7 @@
       autoPickTimer = setTimeout(() => {
         autoPickTimer = null;
         pendingAutoPickSignature = "";
-        if (!state.autoPick || getActiveLevelUpCards().length < 2) return;
+        if (!state.autoPick || !isLevelUpVisible) return;
         const freshCandidates = rankCurrentCandidates();
         if (!freshCandidates.length || scoredCandidateSignature(freshCandidates) !== planSignature) return;
         scheduleAutoPick(freshCandidates);
@@ -2047,11 +2009,10 @@
 
   function renderRecommendations(candidates, hasClearRecommendation) {
     ui.recommendations.replaceChildren();
-    const offerActive = getActiveLevelUpCards().length >= 2;
-    if (!offerActive || !candidates.length) {
+    if (!isLevelUpVisible || !candidates.length) {
       const message = document.createElement("p");
       message.className = "muted";
-      message.textContent = offerActive ? "Chưa đọc được nội dung thẻ. Gợi ý sẽ hiện khi game cập nhật danh sách." : "Đang dò trực tiếp các thẻ trong #scr-levelup và #cards.";
+      message.textContent = isLevelUpVisible ? "Chưa đọc được nội dung thẻ. Gợi ý sẽ hiện khi game cập nhật danh sách." : "Khi màn hình chọn thẻ xuất hiện, gợi ý sẽ hiện ở đây.";
       ui.recommendations.append(message);
       return;
     }
@@ -2095,7 +2056,7 @@
   }
 
   function onGameLevelUpKeydown(event) {
-    if (getActiveLevelUpCards().length < 2 || event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!isLevelUpVisible || event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.composedPath().includes(host)) return;
     const target = event.target;
     if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
@@ -2112,7 +2073,6 @@
     autoPickTimer = null;
     pendingAutoPickSignature = "";
     autoPickSignature = cardSelectionSignature();
-    levelUpSignalUntil = 0;
   }
 
   function trackGameSelection(candidate) {

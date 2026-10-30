@@ -1,4 +1,4 @@
-# PokéSurvivor Build Assistant 0.3.14
+# PokéSurvivor Build Assistant 0.3.15
 
 Extension Chrome/Edge Manifest V3 hỗ trợ theo dõi lượt chơi, đề xuất build skill, đọc Partner/TM và quản lý một số thao tác trong game **[pokesurvivor.com](https://pokesurvivor.com/)**. Tác giả: **Jokervtn94**.
 
@@ -38,47 +38,16 @@ Sau khi cập nhật mã nguồn, nhấn **Reload** ở trang Extensions rồi t
 
 Extension lưu tùy chọn build và dữ liệu tham khảo công khai trong `chrome.storage.local`. Tên Partner được dùng để tải trang build công khai; nội dung Túi TM chỉ được đọc trong trang game và lưu trong bộ nhớ cho tới khi đóng trang. Extension không đọc PokéCoin hoặc Shop.
 
-## Bản 0.3.9
+## Bản 0.3.15
 
-- Sửa nhận diện màn lên cấp khi game báo lớp bao ẩn nhưng các thẻ trong vùng cards đang hiển thị; tiếp tục gợi ý và tự chọn thẻ điểm cao nhất.
+- Lấy luồng nhận diện màn lên cấp, đọc `#cards` và chọn thẻ của v0.3.2 làm nền đã được người chơi xác nhận hoạt động.
+- Giữ các chức năng được bổ sung sau v0.3.2: nhận diện Partner, theo dõi skill/Bond, reset lượt, tự nhận Missions sau trận, Auto Gacha và gợi ý/dạy TM cho Partner.
+- Auto-pick luôn chọn thẻ hạng 1 theo điểm; nếu bằng điểm thì chọn theo thứ tự thẻ của game, không yêu cầu click thủ công.
+- Loại các gói phát hành lỗi khỏi thư mục `releases`; chỉ giữ bản nền v0.3.2 và bản hợp nhất v0.3.15.
 
-## Bản 0.3.10
+## Nền ổn định v0.3.2
 
-- Sửa nhận diện dự phòng bằng cách kiểm tra trực tiếp các thẻ skill đang hiển thị, không phụ thuộc kích thước khung cards; dùng đúng các thẻ đang render để xếp hạng và tự chọn.
-
-## Bản 0.3.13
-
-- Nhận diện thêm dòng chữ “Choose a reward” đang hiển thị, độc lập với trạng thái CSS của lớp phủ.
-- Đọc trực tiếp các mục trong `#cards` khi có offer lên cấp; không bỏ thẻ chỉ vì phép đo hình học trả về vùng 0×0 trong lúc chuyển cảnh.
-- Chỉ xếp hạng dữ liệu `#cards` khi đang có offer lên cấp.
-
-## Bản 0.3.14
-
-- Đổi cách dò offer lên cấp: đọc trực tiếp các `.card` đang hiển thị bên trong `#scr-levelup` và `#cards`, thay vì dựa vào cờ trạng thái được cập nhật qua mutation.
-- Quét lại mỗi 200 ms để bảng gợi ý và auto-pick bắt kịp ngay cả khi game cập nhật lớp màn hình và nội dung thẻ ở các thời điểm khác nhau.
-- Hiện số thẻ đã nhận diện cạnh cấp độ để dễ xác nhận detector đang thấy offer.
-- Sửa phím dự phòng `1`–`3`: phát sự kiện từ `document.body` để sự kiện nổi bọt tới cả `document` và `window`.
-
-## Bản 0.3.12
-
-- Khôi phục cách xác định màn lên cấp và danh sách thẻ theo luồng đã hoạt động ổn định ở bản 0.3.2.
-- Chỉ đọc các thẻ trong `#cards`, tránh nhầm nút Reroll hoặc nút khác trong màn chọn thưởng thành thẻ skill.
-- Giữ phương án gửi phím chọn tương ứng nếu game không xác nhận cú click tự động.
-
-## Bản 0.3.11
-
-- Theo dõi tín hiệu đổi cấp từ `lvl-num` để bổ sung nhận diện khi lớp chứa thẻ bị co lại.
-- Nếu game không nhận sự kiện click của extension, gửi thêm phím số tương ứng với thẻ hạng 1.
-- Hiện số phiên bản trong tiêu đề để xác nhận extension đã được cập nhật.
-
-## Bản 0.3.8
-
-- Chuyển nút và bảng Extension sang góc trái.
-- Gỡ quét PokéCoin và Shop TM; chỉ đọc số lượng TM thụ động khi mở Túi.
-- Sau trận, tự về menu, nhận Mission hoàn thành, chạy các chế độ Gacha đã bật và quay lại menu.
-- Thêm bốn lựa chọn Auto Gacha: 10/100 lượt bằng vé thường hoặc vé ×10.
-- Tải build theo Partner đang chơi, xếp hạng tối đa ba TM tương thích, sao chép danh sách và dạy TM tự động sau khi xác nhận đủ các TM còn thiếu trong Túi.
-- Tiếp tục tự chọn thẻ lên cấp có điểm cao nhất và reset theo lượt.
+v0.3.2 là bản nền cho detector và cách đọc thẻ lên cấp. Gói gốc được giữ trong `releases` để có thể cài lại khi cần.
 
 ### Giới hạn xếp hạng TM
 
