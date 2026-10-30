@@ -908,7 +908,12 @@
   }
 
   function onDodgeVisibilityChange() {
-    if (document.hidden) releaseDodgeKeys();
+    if (document.hidden && autoDodgeEnabled) {
+      autoDodgeEnabled = false;
+      ui.autoDodge.checked = false;
+      stopDodgeMonitor();
+      ui.dodgeStatus.textContent = "Tự né đã tắt khi bạn rời tab; bật lại thủ công trong Vách Nứt.";
+    }
   }
 
   function onManualMovementKeydown(event) {
@@ -945,10 +950,18 @@
       ui.dodgeStatus.textContent = "Đã tắt khi rời lượt; bật lại khi đang ở Vách Nứt.";
       return;
     }
-    if (document.hidden || isBlockingRunScreen()) {
+    const overScreen = document.querySelector("#scr-over");
+    if (overScreen && !overScreen.classList.contains("hidden") && getComputedStyle(overScreen).display !== "none") {
+      autoDodgeEnabled = false;
+      ui.autoDodge.checked = false;
+      stopDodgeMonitor();
+      ui.dodgeStatus.textContent = "Tự né đã tắt khi lượt chơi kết thúc.";
+      return;
+    }
+    if (document.hidden || !document.hasFocus() || isBlockingRunScreen()) {
       releaseDodgeKeys();
-      ui.dodgeStatus.textContent = document.hidden
-        ? "Tạm dừng khi tab game không hiển thị."
+      ui.dodgeStatus.textContent = document.hidden || !document.hasFocus()
+        ? "Tạm dừng khi tab game không hiển thị hoặc không có tiêu điểm."
         : "Đang chờ màn chơi hoạt động; né tự dừng khi mở menu.";
       return;
     }
