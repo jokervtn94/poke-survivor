@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.17",
-  "description": "Xếp item theo Partner, move set và Bond đang dùng hoặc dự kiến.",
+  "version": "0.3.18",
+  "description": "Chọn move set và Bond ưu tiên cho Partner, rồi tự build theo cấu hình đã xác nhận.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [

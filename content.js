@@ -78,6 +78,7 @@
     autoReroll: true,
     autoBuildFromMoveset: false,
     autoBondFromMoveset: false,
+    selectedBuild: null,
     autoPickItems: true,
     targets: [],
     partnerBuild: null,
@@ -113,6 +114,8 @@
   let itemAutoTimer = null;
   let itemWatchdogTimer = null;
   let itemAttemptSignature = "";
+  let buildConfigDraft = null;
+  let buildConfigFeedback = "";
   let pendingItemName = "";
   let itemManualOverride = false;
   let lastBuildFetchPokemon = "";
@@ -142,6 +145,14 @@
 
         <div class="section-title"><span>Move set gợi ý cho Partner</span><button id="psba-load-moveset" class="text-button" type="button">Tải gợi ý</button></div>
         <div id="psba-moveset" class="moveset-list"><p class="muted">Chọn Partner để tải move set tham khảo.</p></div>
+        <button id="psba-configure-build" class="primary-button" type="button" disabled>Tự build move set</button>
+        <div id="psba-build-config" class="build-config" hidden>
+          <p class="muted">Chọn các move muốn lấy, sắp thứ tự ưu tiên và đánh dấu đúng hai move để ghép Bond đầu tiên. Biểu tượng hiển thị hệ và nhóm move.</p>
+          <div id="psba-build-config-moves" class="build-config-moves"></div>
+          <div id="psba-build-config-bond" class="build-config-bond"></div>
+          <p id="psba-build-config-status" class="muted auto-status"></p>
+          <div class="build-config-actions"><button id="psba-build-config-cancel" class="quiet-button" type="button">Hủy</button><button id="psba-build-config-confirm" class="primary-button" type="button" disabled>Xác nhận & bật Auto build + Bond</button></div>
+        </div>
         <label class="auto-pick-row"><span><input id="psba-auto-build" type="checkbox" disabled> Tự build theo move set</span></label>
         <p id="psba-build-mode-status" class="muted auto-status">Tắt chế độ tự build.</p>
 
@@ -206,6 +217,12 @@
     itemRecommendations: shadow.querySelector("#psba-item-recommendations"),
     autoBuild: shadow.querySelector("#psba-auto-build"),
     buildModeStatus: shadow.querySelector("#psba-build-mode-status"),
+    configureBuild: shadow.querySelector("#psba-configure-build"),
+    buildConfig: shadow.querySelector("#psba-build-config"),
+    buildConfigMoves: shadow.querySelector("#psba-build-config-moves"),
+    buildConfigBond: shadow.querySelector("#psba-build-config-bond"),
+    buildConfigStatus: shadow.querySelector("#psba-build-config-status"),
+    buildConfigConfirm: shadow.querySelector("#psba-build-config-confirm"),
     autoBond: shadow.querySelector("#psba-auto-bond"),
     bondStatus: shadow.querySelector("#psba-bond-status"),
     loadMoveset: shadow.querySelector("#psba-load-moveset"),
@@ -268,6 +285,11 @@
     renderPartnerBuild();
     refreshRecommendations();
   });
+  ui.configureBuild.addEventListener("click", openBuildConfigurator);
+  shadow.querySelector("#psba-build-config-cancel").addEventListener("click", closeBuildConfigurator);
+  ui.buildConfigConfirm.addEventListener("click", confirmBuildConfiguration);
+  ui.buildConfigMoves.addEventListener("change", onBuildConfigMoveChange);
+  ui.buildConfigMoves.addEventListener("click", onBuildConfigMoveClick);
   ui.autoBond.addEventListener("change", () => {
     state.autoBondFromMoveset = Boolean(ui.autoBond.checked && hasPartnerBuildForCurrentPokemon());
     ui.autoBond.checked = state.autoBondFromMoveset;
@@ -351,6 +373,11 @@
       autoReroll: state.autoReroll,
       autoBuildFromMoveset: state.autoBuildFromMoveset,
       autoBondFromMoveset: state.autoBondFromMoveset,
+      selectedBuild: state.selectedBuild ? {
+        pokemon: state.selectedBuild.pokemon,
+        moves: [...state.selectedBuild.moves],
+        firstPair: [...state.selectedBuild.firstPair]
+      } : null,
       autoPickItems: state.autoPickItems,
       targets: [...state.targets],
       partnerBuild: state.partnerBuild ? {
@@ -380,6 +407,13 @@
         state.autoReroll = value.autoReroll === undefined ? true : Boolean(value.autoReroll);
         state.autoBuildFromMoveset = Boolean(value.autoBuildFromMoveset);
         state.autoBondFromMoveset = Boolean(value.autoBondFromMoveset);
+        state.selectedBuild = value.selectedBuild && typeof value.selectedBuild.pokemon === "string"
+          ? {
+              pokemon: value.selectedBuild.pokemon,
+              moves: Array.isArray(value.selectedBuild.moves) ? value.selectedBuild.moves.filter((item) => typeof item === "string").slice(0, MAX_MOVE_SLOTS) : [],
+              firstPair: Array.isArray(value.selectedBuild.firstPair) ? value.selectedBuild.firstPair.filter((item) => typeof item === "string").slice(0, 2) : []
+            }
+          : null;
         state.autoPickItems = value.autoPickItems === undefined ? true : Boolean(value.autoPickItems);
         state.targets = Array.isArray(value.targets) ? value.targets.filter((item) => typeof item === "string") : [];
         state.partnerBuild = value.partnerBuild && typeof value.partnerBuild.pokemon === "string" && Array.isArray(value.partnerBuild.moves)
@@ -612,14 +646,37 @@
     return Boolean(state.partnerBuild && normalize(state.partnerBuild.pokemon) === normalize(state.pokemon) && state.partnerBuild.moves.length);
   }
 
+  function configuredBuildForCurrentPokemon() {
+    if (!hasPartnerBuildForCurrentPokemon() || !state.selectedBuild
+      || normalize(state.selectedBuild.pokemon) !== normalize(state.pokemon)) return null;
+    const available = new Map(state.partnerBuild.moves.map((move) => [normalize(move.name), move.name]));
+    const moves = [...new Set(state.selectedBuild.moves.map((name) => available.get(normalize(name))).filter(Boolean))].slice(0, MAX_MOVE_SLOTS);
+    const firstPair = [...new Set(state.selectedBuild.firstPair.map((name) => available.get(normalize(name))).filter((name) => name && moves.some((item) => normalize(item) === normalize(name))))].slice(0, 2);
+    return moves.length >= 2 && firstPair.length === 2 ? { moves, firstPair } : null;
+  }
+
+  function activeBuildMoves() {
+    if (!hasPartnerBuildForCurrentPokemon()) return [];
+    const configured = configuredBuildForCurrentPokemon();
+    if (!configured) return state.partnerBuild.moves;
+    return configured.moves.map((name) => state.partnerBuild.moves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean);
+  }
+
+  function activeBuildMoveNames() {
+    return activeBuildMoves().map((move) => move.name);
+  }
+
   function setPartnerPokemon(name, manual = false) {
     const nextPokemon = String(name || "").trim();
     const changed = normalize(state.pokemon) !== normalize(nextPokemon);
     if (changed) {
       clearRunTracker();
       state.partnerBuild = null;
+      state.selectedBuild = null;
       state.autoBuildFromMoveset = false;
       state.autoBondFromMoveset = false;
+      buildConfigDraft = null;
+      ui.buildConfig.hidden = true;
       lastBuildFetchPokemon = "";
     }
     state.pokemon = nextPokemon;
@@ -805,11 +862,14 @@
   function renderPartnerBuild() {
     ui.moveset.replaceChildren();
     const matchingBuild = hasPartnerBuildForCurrentPokemon();
+    ui.configureBuild.disabled = !matchingBuild;
+    ui.configureBuild.textContent = configuredBuildForCurrentPokemon() ? "Chỉnh move set & Bond" : "Tự build move set";
     ui.autoBuild.disabled = !matchingBuild;
     ui.autoBuild.checked = Boolean(matchingBuild && state.autoBuildFromMoveset);
     ui.autoBond.disabled = !matchingBuild;
     ui.autoBond.checked = Boolean(matchingBuild && state.autoBondFromMoveset);
     if (!state.pokemon) {
+      ui.buildConfig.hidden = true;
       const message = document.createElement("p");
       message.className = "muted";
       message.textContent = "Chọn Partner để tải move set tham khảo.";
@@ -818,6 +878,7 @@
       return;
     }
     if (!matchingBuild) {
+      ui.buildConfig.hidden = true;
       const message = document.createElement("p");
       message.className = "muted";
       message.textContent = `Chưa có move set tải về cho ${state.pokemon}.`;
@@ -830,18 +891,19 @@
 
     const source = document.createElement("p");
     source.className = "muted moveset-source";
-    source.textContent = "Build cộng đồng theo luật game; dùng làm lộ trình tham khảo.";
+    source.textContent = "Build cộng đồng theo luật game; bạn có thể chọn lại move và ưu tiên Bond.";
     ui.moveset.append(source);
     for (const [index, move] of state.partnerBuild.moves.entries()) {
       const row = document.createElement("div");
       row.className = "build-item moveset-item";
+      const icon = createMoveIcon(getMoveData(move.name));
       const name = document.createElement("span");
       name.textContent = `${index + 1}. ${move.name}${move.role ? ` · ${move.role}` : ""}`;
       const evo = document.createElement("span");
       evo.className = "build-level";
       evo.textContent = moveData.find((item) => normalize(item.name) === normalize(move.name))?.evoStat || "Move";
       if (move.evolves) evo.title = move.evolves;
-      row.append(name, evo);
+      row.append(icon, name, evo);
       ui.moveset.append(row);
     }
     const suggestedBond = getPartnerBuildBondPlan();
@@ -850,8 +912,15 @@
       bond.className = "muted moveset-source";
       bond.textContent = suggestedBond.names.length >= 4
         ? `Lộ trình Bond: ${suggestedBond.firstPair.join(" + ")} → thêm ${suggestedBond.additions.join(" → thêm ")} (mỗi Bond sau thêm một move vào nhóm).`
-        : `Bond ưu tiên: ${suggestedBond.names.join(" + ")} · ${suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
+        : `Bond ưu tiên: ${suggestedBond.firstPair.join(" + ")} · ${suggestedBond.source === "user" ? "theo lựa chọn của bạn" : suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
       ui.moveset.append(bond);
+    }
+    const configured = configuredBuildForCurrentPokemon();
+    if (configured) {
+      const selected = document.createElement("p");
+      selected.className = "moveset-source selected-build-summary";
+      selected.textContent = `Đang dùng: ${configured.moves.join(" → ")} · Bond đầu: ${configured.firstPair.join(" + ")}`;
+      ui.moveset.append(selected);
     }
     if (state.partnerBuild.cardPriority.length) {
       const priority = document.createElement("p");
@@ -869,11 +938,253 @@
       ui.moveset.append(link);
     }
     ui.buildModeStatus.textContent = state.autoBuildFromMoveset
-      ? "Đang ưu tiên move và thẻ theo move set này."
+      ? configuredBuildForCurrentPokemon()
+        ? "Đang ưu tiên các move theo thứ tự bạn đã xác nhận."
+        : "Đang ưu tiên move và thẻ theo move set tham khảo."
       : "Bật tự build để ưu tiên move set này khi chọn thẻ.";
     ui.bondStatus.textContent = state.autoBondFromMoveset
-      ? "Đang chờ Bond; sẽ ưu tiên nhóm đang mở rồi thêm move kế tiếp trong lộ trình build."
+      ? configuredBuildForCurrentPokemon()
+        ? "Đang chờ Bond; sẽ ghép cặp bạn chọn và nối move theo thứ tự đã xác nhận."
+        : "Đang chờ Bond; sẽ ưu tiên nhóm đang mở rồi thêm move kế tiếp trong lộ trình build."
       : "Bật để tự chọn Bond theo thứ tự game cho phép, tối đa 4 move trong một nhóm.";
+    if (!ui.buildConfig.hidden) renderBuildConfigurator();
+  }
+
+  const MOVE_TYPE_COLORS = {
+    normal: "#b9b4a6", fire: "#f07d45", water: "#54a8f5", grass: "#64bd75", electric: "#f4cf50",
+    ice: "#87d8dc", fighting: "#dc765c", poison: "#aa73c5", ground: "#d5ad69", flying: "#a8b6e9",
+    psychic: "#ec79a0", bug: "#a4b846", rock: "#bea76c", ghost: "#8072bf", dragon: "#7665dc",
+    dark: "#776d7b", steel: "#9ba9bb", fairy: "#e897ca"
+  };
+  const MOVE_TYPE_MARKS = {
+    normal: "N", fire: "F", water: "W", grass: "G", electric: "E", ice: "I", fighting: "Fi",
+    poison: "P", ground: "Gr", flying: "Fl", psychic: "Ps", bug: "B", rock: "R", ghost: "Gh",
+    dragon: "Dr", dark: "D", steel: "St", fairy: "Fa"
+  };
+  const MOVE_KIND_MARKS = {
+    projectile: "•", homing: "⌖", bounce: "↗", chain: "⌁", beam: "━", charge: "ϟ", melee: "✦",
+    spin: "⟳", orbit: "◌", aura: "◎", nova: "✧", burst: "✧", cone: "◢", spray: "≋", dash: "➤",
+    trail: "∿", mine: "✹", meteor: "✦", turret: "▣", buff: "+", vortex: "◉", quake: "⌁", shove: "↗", stun: "✴"
+  };
+
+  function createMoveIcon(move) {
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 40 40");
+    icon.setAttribute("class", "move-icon");
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", move ? `${move.type} ${move.kind} icon for ${move.name}` : "Move icon");
+    const typeKey = normalize(move?.type);
+    const color = MOVE_TYPE_COLORS[typeKey] || "#8795aa";
+    const typeMark = MOVE_TYPE_MARKS[typeKey] || "?";
+    const kindMark = MOVE_KIND_MARKS[normalize(move?.kind)] || "•";
+    const background = document.createElementNS(icon.namespaceURI, "rect");
+    background.setAttribute("x", "1");
+    background.setAttribute("y", "1");
+    background.setAttribute("width", "38");
+    background.setAttribute("height", "38");
+    background.setAttribute("rx", "10");
+    background.setAttribute("fill", "#263b68");
+    background.setAttribute("stroke", "#89a7df");
+    background.setAttribute("stroke-width", "1.5");
+    const emblem = document.createElementNS(icon.namespaceURI, "circle");
+    emblem.setAttribute("cx", "18");
+    emblem.setAttribute("cy", "18");
+    emblem.setAttribute("r", "12.5");
+    emblem.setAttribute("fill", color);
+    emblem.setAttribute("stroke", "#fff");
+    emblem.setAttribute("stroke-opacity", ".75");
+    emblem.setAttribute("stroke-width", "1.2");
+    const typeText = document.createElementNS(icon.namespaceURI, "text");
+    typeText.setAttribute("x", "18");
+    typeText.setAttribute("y", "21");
+    typeText.setAttribute("text-anchor", "middle");
+    typeText.setAttribute("font-size", typeMark.length > 1 ? "7" : "10");
+    typeText.setAttribute("font-weight", "900");
+    typeText.setAttribute("fill", "#101827");
+    typeText.textContent = typeMark;
+    const badge = document.createElementNS(icon.namespaceURI, "circle");
+    badge.setAttribute("cx", "30");
+    badge.setAttribute("cy", "30");
+    badge.setAttribute("r", "8");
+    badge.setAttribute("fill", "#101827");
+    badge.setAttribute("stroke", "#f5c76b");
+    badge.setAttribute("stroke-width", "1");
+    const kindText = document.createElementNS(icon.namespaceURI, "text");
+    kindText.setAttribute("x", "30");
+    kindText.setAttribute("y", "33");
+    kindText.setAttribute("text-anchor", "middle");
+    kindText.setAttribute("font-size", "9");
+    kindText.setAttribute("font-weight", "900");
+    kindText.setAttribute("fill", "#fff");
+    kindText.textContent = kindMark;
+    icon.append(background, emblem, typeText, badge, kindText);
+    return icon;
+  }
+
+  function openBuildConfigurator() {
+    if (!hasPartnerBuildForCurrentPokemon()) return;
+    const configured = configuredBuildForCurrentPokemon();
+    const defaultPlan = getPartnerBuildBondPlan();
+    buildConfigDraft = {
+      pokemon: state.pokemon,
+      moves: configured ? [...configured.moves] : state.partnerBuild.moves.map((move) => move.name).slice(0, MAX_MOVE_SLOTS),
+      firstPair: configured ? [...configured.firstPair] : [...(defaultPlan?.firstPair || [])]
+    };
+    buildConfigFeedback = "";
+    ui.buildConfig.hidden = false;
+    renderBuildConfigurator();
+  }
+
+  function closeBuildConfigurator() {
+    buildConfigDraft = null;
+    buildConfigFeedback = "";
+    ui.buildConfig.hidden = true;
+  }
+
+  function renderBuildConfigurator() {
+    if (!buildConfigDraft || !hasPartnerBuildForCurrentPokemon()) return;
+    ui.buildConfigMoves.replaceChildren();
+    const selectedNames = buildConfigDraft.moves;
+    const orderedRows = [
+      ...selectedNames.map((name) => state.partnerBuild.moves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean),
+      ...state.partnerBuild.moves.filter((move) => !selectedNames.some((name) => normalize(name) === normalize(move.name)))
+    ];
+    for (const move of orderedRows) {
+      const selectedIndex = selectedNames.findIndex((name) => normalize(name) === normalize(move.name));
+      const selected = selectedIndex >= 0;
+      const inFirstBond = buildConfigDraft.firstPair.some((name) => normalize(name) === normalize(move.name));
+      const row = document.createElement("div");
+      row.className = `build-config-move${selected ? " selected" : ""}`;
+      row.dataset.move = move.name;
+      const icon = createMoveIcon(getMoveData(move.name));
+      const details = document.createElement("div");
+      details.className = "build-config-details";
+      const title = document.createElement("strong");
+      title.textContent = `${selected ? `${selectedIndex + 1}. ` : ""}${move.name}`;
+      const meta = document.createElement("small");
+      const data = getMoveData(move.name);
+      meta.textContent = [data?.type, data?.category, move.role].filter(Boolean).join(" · ") || "Move";
+      details.append(title, meta);
+
+      const controls = document.createElement("div");
+      controls.className = "build-config-controls";
+      const includeLabel = document.createElement("label");
+      includeLabel.className = "config-choice";
+      const include = document.createElement("input");
+      include.type = "checkbox";
+      include.dataset.role = "include";
+      include.checked = selected;
+      include.setAttribute("aria-label", `Dùng ${move.name} trong move set`);
+      includeLabel.append(include, document.createTextNode("Dùng"));
+      const bondLabel = document.createElement("label");
+      bondLabel.className = "config-choice bond-choice";
+      const bond = document.createElement("input");
+      bond.type = "checkbox";
+      bond.dataset.role = "bond";
+      bond.checked = inFirstBond;
+      bond.disabled = !selected;
+      bond.setAttribute("aria-label", `Ưu tiên ${move.name} trong Bond đầu tiên`);
+      bondLabel.append(bond, document.createTextNode("Bond đầu"));
+      controls.append(includeLabel, bondLabel);
+
+      const order = document.createElement("div");
+      order.className = "build-config-order";
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "quiet-button order-button";
+      up.dataset.direction = "up";
+      up.disabled = !selected || selectedIndex === 0;
+      up.setAttribute("aria-label", `Ưu tiên ${move.name} cao hơn`);
+      up.textContent = "↑";
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "quiet-button order-button";
+      down.dataset.direction = "down";
+      down.disabled = !selected || selectedIndex === selectedNames.length - 1;
+      down.setAttribute("aria-label", `Ưu tiên ${move.name} thấp hơn`);
+      down.textContent = "↓";
+      order.append(up, down);
+      row.append(icon, details, controls, order);
+      ui.buildConfigMoves.append(row);
+    }
+
+    const pair = buildConfigDraft.firstPair;
+    ui.buildConfigBond.textContent = pair.length === 2
+      ? `Bond đầu tiên: ${pair.join(" + ")} · các Bond sau ưu tiên thêm move theo thứ tự trên.`
+      : "Chọn đúng hai move bằng ô “Bond đầu” để đặt cặp ghép mở đầu.";
+    const valid = selectedNames.length >= 2 && selectedNames.length <= MAX_MOVE_SLOTS && pair.length === 2
+      && pair.every((name) => selectedNames.some((item) => normalize(item) === normalize(name)));
+    ui.buildConfigStatus.textContent = buildConfigFeedback || (valid
+      ? `${selectedNames.length} move đã chọn · thứ tự hiện tại: ${selectedNames.join(" → ")}`
+      : `Chọn tối thiểu hai move và đúng hai move cho Bond đầu tiên (tối đa ${MAX_MOVE_SLOTS}).`);
+    ui.buildConfigConfirm.disabled = !valid;
+  }
+
+  function onBuildConfigMoveChange(event) {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    const row = input?.closest("[data-move]");
+    if (!input || !row || !buildConfigDraft) return;
+    buildConfigFeedback = "";
+    const name = row.dataset.move;
+    if (input.dataset.role === "include") {
+      const index = buildConfigDraft.moves.findIndex((item) => normalize(item) === normalize(name));
+      if (input.checked && index < 0) {
+        if (buildConfigDraft.moves.length >= MAX_MOVE_SLOTS) {
+          buildConfigFeedback = `Chỉ chọn tối đa ${MAX_MOVE_SLOTS} move.`;
+          renderBuildConfigurator();
+          return;
+        }
+        buildConfigDraft.moves.push(name);
+      } else if (!input.checked && index >= 0) {
+        buildConfigDraft.moves.splice(index, 1);
+        buildConfigDraft.firstPair = buildConfigDraft.firstPair.filter((item) => normalize(item) !== normalize(name));
+      }
+    } else if (input.dataset.role === "bond") {
+      const index = buildConfigDraft.firstPair.findIndex((item) => normalize(item) === normalize(name));
+      if (input.checked && index < 0) {
+        if (!buildConfigDraft.moves.some((item) => normalize(item) === normalize(name))) {
+          buildConfigFeedback = "Đưa move vào move set trước khi chọn Bond đầu tiên.";
+        } else if (buildConfigDraft.firstPair.length >= 2) {
+          buildConfigFeedback = "Bond mở đầu cần đúng hai move. Bỏ chọn một move Bond trước.";
+        } else {
+          buildConfigDraft.firstPair.push(name);
+        }
+      } else if (!input.checked && index >= 0) {
+        buildConfigDraft.firstPair.splice(index, 1);
+      }
+    }
+    renderBuildConfigurator();
+  }
+
+  function onBuildConfigMoveClick(event) {
+    const button = event.target instanceof Element ? event.target.closest("button[data-direction]") : null;
+    const row = button?.closest("[data-move]");
+    if (!button || !row || !buildConfigDraft) return;
+    const index = buildConfigDraft.moves.findIndex((name) => normalize(name) === normalize(row.dataset.move));
+    const next = index + (button.dataset.direction === "up" ? -1 : 1);
+    if (index < 0 || next < 0 || next >= buildConfigDraft.moves.length) return;
+    [buildConfigDraft.moves[index], buildConfigDraft.moves[next]] = [buildConfigDraft.moves[next], buildConfigDraft.moves[index]];
+    buildConfigFeedback = "";
+    renderBuildConfigurator();
+  }
+
+  function confirmBuildConfiguration() {
+    if (!buildConfigDraft || ui.buildConfigConfirm.disabled) return;
+    state.selectedBuild = {
+      pokemon: state.pokemon,
+      moves: [...buildConfigDraft.moves],
+      firstPair: [...buildConfigDraft.firstPair]
+    };
+    state.autoBuildFromMoveset = true;
+    state.autoBondFromMoveset = true;
+    ui.autoBuild.checked = true;
+    ui.autoBond.checked = true;
+    closeBuildConfigurator();
+    persistState();
+    renderPartnerBuild();
+    refreshRecommendations();
+    updateBondState();
+    ui.buildModeStatus.textContent = "Đã xác nhận: tự build theo move đã chọn và ưu tiên Bond theo cặp cùng thứ tự đã đặt.";
   }
 
   function renderTypes() {
@@ -1139,7 +1450,7 @@
   function activeMovePriorityNames() {
     const names = [];
     if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
-      names.push(...state.partnerBuild.moves.map((move) => move.name));
+      names.push(...activeBuildMoveNames());
     }
     names.push(...state.targets);
     return [...new Map(names.map((name) => [normalize(name), name])).values()];
@@ -1201,7 +1512,7 @@
         reasons.push("đúng skill mục tiêu");
       }
       if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
-        const moveSetIndex = state.partnerBuild.moves.findIndex((item) => normalize(item.name) === normalize(move.name));
+        const moveSetIndex = activeBuildMoves().findIndex((item) => normalize(item.name) === normalize(move.name));
         if (moveSetIndex >= 0) {
           score += Math.max(20, 36 - moveSetIndex * 4);
           reasons.push(`thuộc move set Partner, ưu tiên #${moveSetIndex + 1}`);
@@ -1369,7 +1680,7 @@
   }
 
   function unfinishedBuildMoveNames() {
-    const plannedNames = state.partnerBuild?.moves?.map((move) => move.name) || [];
+    const plannedNames = activeBuildMoveNames();
     return plannedNames.filter((name) => {
       const learned = state.learnedMoves.find((item) => normalize(item.name) === normalize(name));
       return !learned || !learned.evolved;
@@ -1607,6 +1918,22 @@
 
   function getPartnerBuildBondPlan() {
     if (!hasPartnerBuildForCurrentPokemon()) return null;
+    const configured = configuredBuildForCurrentPokemon();
+    if (configured) {
+      const names = [
+        ...configured.firstPair,
+        ...configured.moves.filter((name) => !configured.firstPair.some((pairName) => normalize(pairName) === normalize(name)))
+      ];
+      const groupScore = fusionGroupScore(names.map(getMoveData).filter(Boolean));
+      return {
+        names,
+        firstPair: [...configured.firstPair],
+        additions: names.slice(2),
+        source: "user",
+        score: groupScore.score,
+        reasons: ["theo move set và cặp Bond do người chơi xác nhận", ...groupScore.reasons].slice(0, 4)
+      };
+    }
     const moves = state.partnerBuild.moves
       .map((item, index) => ({ move: getMoveData(item.name), index }))
       .filter((item) => item.move)
@@ -1761,7 +2088,7 @@
   }
 
   function bondPriority(name) {
-    const index = state.partnerBuild?.moves.findIndex((move) => normalize(move.name) === normalize(name)) ?? -1;
+    const index = activeBuildMoves().findIndex((move) => normalize(move.name) === normalize(name));
     return index < 0 ? 0 : Math.max(1, MAX_MOVE_SLOTS - index) * 3;
   }
 
@@ -1840,7 +2167,9 @@
     // the cards the game actually shows. A single offered card is still valid.
     if (!availableSingles.length) return null;
     const baseScore = fusionGroupScore(selectedNames.map(getMoveData).filter(Boolean)).score;
-    const explicitPairs = state.partnerBuild?.bondGroups || [];
+    const explicitPairs = configuredBuildForCurrentPokemon()
+      ? [getPartnerBuildBondPlan()?.names || []]
+      : state.partnerBuild?.bondGroups || [];
     const ranked = availableSingles
       .map(({ candidate, names }) => {
         const mergedNames = [...selectedNames, ...names];
@@ -1932,7 +2261,7 @@
         return;
       }
       const signature = bondSelectionSignature(phase, candidates);
-      queueBondChoice(candidate, phase, signature, plan?.source === "guide"
+      queueBondChoice(candidate, phase, signature, plan?.source === "guide" || plan?.source === "user"
         ? `theo thứ tự build: ${formatBondNames(plan.names)}`
         : `theo lộ trình Bond: ${formatBondNames(plan?.names || candidateMoveNames(candidate))}`);
       return;
@@ -2161,7 +2490,7 @@
 
     for (const learned of state.learnedMoves) appendMove(learned.name, Number(learned.level) || 1);
     if (!entries.length || (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon())) {
-      for (const planned of state.partnerBuild?.moves || []) appendMove(planned.name, 1);
+      for (const planned of activeBuildMoves()) appendMove(planned.name, 1);
     }
     for (const group of actualBondGroups) {
       for (const name of group) appendMove(name, 1);
@@ -2503,13 +2832,15 @@
         : `Bond ưu tiên: ${partnerPlan.names.join(" + ")}`;
       const source = document.createElement("span");
       source.className = "score";
-      source.textContent = partnerPlan.source === "guide" ? "build" : "gợi ý";
+      source.textContent = partnerPlan.source === "user" ? "bạn chọn" : partnerPlan.source === "guide" ? "build" : "gợi ý";
       title.append(names, source);
       const reason = document.createElement("p");
       const learned = new Set(state.learnedMoves.map((move) => normalize(move.name)));
       const learnedCount = partnerPlan.names.filter((name) => learned.has(normalize(name))).length;
       const reasonText = partnerPlan.reasons.slice(0, 2).join(" · ");
-      reason.textContent = partnerPlan.source === "guide"
+      reason.textContent = partnerPlan.source === "user"
+        ? `Theo move set và cặp Bond đầu tiên bạn xác nhận; các Bond sau thêm move theo thứ tự đã đặt. Đã có ${learnedCount}/${partnerPlan.names.length} move trong lượt.${reasonText ? ` ${reasonText}.` : ""}`
+        : partnerPlan.source === "guide"
         ? `Ghép cặp mở đầu, rồi mỗi Bond thêm một move vào nhóm đang mở; đã có ${learnedCount}/${partnerPlan.names.length} move trong lượt.${reasonText ? ` ${reasonText}.` : ""}`
         : `Xếp theo tương tác giữa sát thương, khống chế, trạng thái và thứ tự build; mỗi Bond sau thêm một move vào nhóm; đã có ${learnedCount}/${partnerPlan.names.length}.${reasonText ? ` ${reasonText}.` : ""}`;
       row.append(title, reason);
@@ -2755,6 +3086,28 @@
     .owned-row .known-level-input { flex: 0 0 45px; width: 45px; padding: 0 5px; }
     .quiet-button { flex: 0 0 auto; border: 1px solid #52617a; border-radius: 8px; background: #25334a; color: #e9f1ff; padding: 0 9px; }
     .quiet-button:disabled, .text-button:disabled { opacity: .55; cursor: wait; }
+    .primary-button { width: 100%; min-height: 34px; margin: 5px 0; padding: 6px 9px; border: 1px solid #d4ad59; border-radius: 8px; background: linear-gradient(180deg, #3b5687, #283d66); color: #fff0c7; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+    .primary-button:disabled { opacity: .5; cursor: not-allowed; }
+    .build-config[hidden] { display: none !important; }
+    .build-config { display: grid; gap: 7px; margin: 7px 0; padding: 8px; border: 1px solid #596c8d; border-radius: 10px; background: #111d31; }
+    .build-config > .muted { margin: 0; line-height: 1.4; }
+    .build-config-moves { display: grid; gap: 5px; }
+    .build-config-move { display: grid; grid-template-columns: 34px minmax(0, 1fr) 77px 42px; align-items: center; gap: 5px; min-height: 47px; padding: 5px; border: 1px solid #344662; border-radius: 8px; background: #17253c; }
+    .build-config-move.selected { border-color: #ad8d50; background: #222b36; }
+    .move-icon { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
+    .build-config-details { display: grid; gap: 2px; min-width: 0; }
+    .build-config-details strong { overflow-wrap: anywhere; font-size: 10px; line-height: 1.2; }
+    .build-config-details small { color: #98a9c3; font-size: 8px; line-height: 1.2; }
+    .build-config-controls { display: grid; gap: 3px; }
+    label.config-choice { display: flex; justify-content: flex-start; gap: 4px; margin: 0; color: #bccbe0; font-size: 8px; line-height: 1.1; cursor: pointer; }
+    label.config-choice input { width: 12px; height: 12px; flex: 0 0 12px; margin: 0; padding: 0; accent-color: #f5c76b; }
+    label.bond-choice { color: #f2cb76; }
+    .build-config-order { display: grid; gap: 3px; }
+    .order-button { width: 20px; height: 18px; padding: 0; line-height: 1; }
+    .build-config-bond { padding: 6px 7px; border-radius: 6px; background: #2b291f; color: #f4d48a; font-size: 9px; font-weight: 700; line-height: 1.35; }
+    .build-config-actions { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 5px; }
+    .build-config-actions .quiet-button { min-height: 33px; padding: 0 6px; font-size: 10px; }
+    .build-config-actions .primary-button { margin: 0; font-size: 10px; }
     .types { min-height: 26px; display: flex; align-items: center; gap: 6px; margin: 5px 0 8px; }
     .type-pill { border-radius: 999px; background: #31415c; color: #dceaff; padding: 3px 8px; font-size: 10px; font-weight: 700; }
     .muted, .section-title small { color: #9baac0; font-size: 11px; }
@@ -2776,9 +3129,10 @@
     .score { flex: 0 0 auto; color: #f5c76b; font-size: 10px; font-weight: 800; }
     .recommendation p { margin: 4px 0 0; color: #aebbd0; font-size: 10px; line-height: 1.35; }
     .fusion-mark { display: block; margin: 5px 0 0 auto; }
-    .build-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 7px; background: #172235; border-radius: 7px; font-size: 11px; }
-    .moveset-item span:first-child { min-width: 0; }
+    .build-item { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 5px 7px; background: #172235; border-radius: 7px; font-size: 11px; }
+    .moveset-item span:not(.build-level) { min-width: 0; flex: 1; overflow-wrap: anywhere; }
     .moveset-source { margin: 0; line-height: 1.35; }
+    .selected-build-summary { padding: 6px 7px; border: 1px solid #846b3e; border-radius: 7px; background: #25251f; color: #eed28b; font-size: 10px; }
     .build-source-link { color: #9bc6ff; font-size: 10px; }
     .build-level { color: #b8c9e1; white-space: nowrap; }
     .stat-history { margin: 3px 0 0; }

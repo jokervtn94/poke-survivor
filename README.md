@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.17
+# PokéSurvivor Build Assistant 0.3.18
 
-Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và tự build Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
+Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, cho phép người chơi chọn move và Bond mở đầu, rồi tự build sau khi xác nhận. Extension cũng tự chọn thẻ, item và ghép Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải [ZIP v0.3.17](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.17.zip) và giải nén.
+1. Tải [ZIP v0.3.18](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.18.zip) và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -21,8 +21,9 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Gợi ý và tự chọn item:** xếp hạng item theo tác dụng, Partner, move set đã học/đang theo, hướng build và Bond. Bond đã ghép được dùng làm dữ liệu chính; nếu bật Auto Bond, lộ trình Bond dự kiến được tính với trọng số thấp hơn cho đến khi game xác nhận ghép. Điểm Choice Band tính theo số ô tấn công thực tế sau khi Bond gom nhiều move vào một ô; Quick Claw, Shell Bell, Life Orb và Leftovers được cộng điểm khi hiệu ứng hỗ trợ nhóm Bond. Build chưa có đòn gây sát thương không được cộng ưu tiên Choice Band. Tự chọn item bật mặc định và có thể tắt riêng; item lạ chưa nhận diện sẽ làm extension dừng click để tránh chọn đoán.
 - **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ không nhận diện được nhận điểm dự phòng; nếu cả ba lựa chọn đều không có dữ liệu, thứ tự game là tiêu chí cuối.
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
+- **Chọn move set và Bond ưu tiên:** nhấn **Tự build move set** để chọn move, sắp thứ tự ưu tiên bằng mũi tên và đánh dấu đúng hai move cho Bond đầu tiên. Danh sách hiển thị biểu tượng SVG theo hệ và nhóm move cùng tên, hệ và loại move. Nhấn **Xác nhận & bật Auto build + Bond** để lưu cấu hình theo Partner và bật cả hai chế độ.
 - **Nạp move mở màn của Partner:** khi thẻ lên cấp xuất hiện, extension đọc move mở màn đã chọn trong dữ liệu game lưu trên trình duyệt, bao gồm move thứ hai đã chọn nếu đã mở khóa. Nếu không đọc được bản lưu, extension dùng move mở màn mặc định theo Pokémon. Move được đánh dấu **Mở màn** và tham gia chấm điểm nâng cấp, gợi ý phối hợp và Bond.
-- **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
+- **Auto build theo move set đã chọn:** sau khi xác nhận cấu hình, extension ưu tiên các move theo thứ tự người chơi đặt khi game đưa thẻ lên cấp. Cấu hình cũng chọn cặp Bond đầu tiên và thứ tự thêm move vào nhóm ở các Bond tiếp theo. Hai checkbox Auto build và Auto Bond vẫn cho phép tắt riêng từng chế độ. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và theo dõi các nhóm Bond tối đa bốn move.
 - **Lộ trình Bond theo luật game:** lần ghép đầu tạo nhóm hai move. Nếu nhóm còn 2–3 move, Bond sau thêm đúng một move lẻ vào nhóm đó; khi không có nhóm dang dở, game ghép hai move lẻ để tạo nhóm mới. Vì vậy, nhóm bốn move được tạo theo chuỗi `2 → 3 → 4`, cần ba lần ghép, không phải hai cặp độc lập. Thứ tự move được xếp theo tương tác giữa sát thương, buff Physical/Special, trạng thái hỗ trợ Hex, khống chế, diện rộng và đòn đánh mục tiêu đơn.
 - **Gợi ý ghép nhóm:** đọc danh tính các move trong thẻ Bond để nhận diện nhóm đã ghép; ưu tiên nhóm 2–3 move đang mở và move kế tiếp trong lộ trình Partner.
@@ -33,11 +34,12 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 
 1. Đồng bộ Partner hoặc chọn Pokémon trong bảng extension.
 2. Chờ move set tải tự động; nếu chưa có, nhấn **Tải gợi ý**.
-3. Khi lần đầu hiện thẻ lên cấp, kiểm tra move mở màn đã được nạp và đánh dấu **Mở màn** trong danh sách skill.
-4. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
-5. Khi lên cấp, extension reroll nếu điểm cao nhất không quá 6 hoặc không có thẻ nào hỗ trợ lộ trình move set Partner. Khi hết lượt reroll, extension áp dụng quy tắc chọn theo điểm và thứ tự ưu tiên move.
-6. Bật **Tự chọn Bond theo move set** riêng. Lần đầu extension ghép hai move ưu tiên; mỗi lần Bond tiếp theo nó chọn nhóm đang mở rồi thêm move kế tiếp theo build.
-7. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
+3. Nhấn **Tự build move set**, chọn move, điều chỉnh thứ tự ưu tiên và đánh dấu cặp Bond mở đầu.
+4. Kiểm tra lựa chọn rồi nhấn **Xác nhận & bật Auto build + Bond**. Cấu hình được lưu theo Pokémon Partner.
+5. Khi lần đầu hiện thẻ lên cấp, kiểm tra move mở màn đã được nạp và đánh dấu **Mở màn** trong danh sách skill; giữ **Tự chọn thẻ** bật.
+6. Khi lên cấp, extension reroll nếu thẻ yếu hoặc không hỗ trợ move set đã xác nhận, sau đó ưu tiên move theo thứ tự đã chọn.
+7. Khi Bond xuất hiện, extension ưu tiên cặp mở đầu; các Bond tiếp theo phát triển nhóm theo thứ tự move. Nếu game không đưa move đó ra, extension chọn phương án hợp lệ tốt nhất trong các thẻ đang hiện.
+8. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
 
 Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được thêm trước sẽ có ưu tiên trước trong trường hợp gần điểm bằng nhau. Tắt **Tự build theo move set** nếu chỉ muốn xem gợi ý; tắt **Tự chọn thẻ** để không tự bấm.
 
