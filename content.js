@@ -133,7 +133,26 @@
         <div><div class="eyebrow">POKÉ SURVIVOR</div><strong>Build Assistant</strong></div>
         <button id="psba-minimize" class="icon-button" type="button" aria-label="Thu gọn">−</button>
       </header>
-      <div class="body">
+      <section id="psba-build-screen" class="build-screen" aria-label="Tự build move set" hidden>
+        <div class="build-screen-header">
+          <button id="psba-build-back" class="quiet-button build-back" type="button">← Trợ lý</button>
+          <div class="build-screen-heading"><div class="eyebrow">PARTNER MOVE BUILD</div><strong>Tự build move set</strong><small id="psba-build-partner">Chưa chọn Partner</small></div>
+          <button id="psba-build-close" class="icon-button" type="button" aria-label="Đóng màn hình build">×</button>
+        </div>
+        <div id="psba-build-config" class="build-config">
+          <div class="build-config-intro">
+            <p class="muted">Move mở đầu đang chọn của Partner được thêm sẵn. Danh sách gồm move hệ Normal, các hệ của Partner và move mở đầu; chọn tối đa bốn move, sắp thứ tự ưu tiên và đánh dấu cặp Bond đầu tiên.</p>
+            <div id="psba-build-config-summary" class="build-config-summary"></div>
+            <div id="psba-build-config-bond" class="build-config-bond"></div>
+          </div>
+          <div id="psba-build-config-moves" class="build-config-moves"></div>
+          <div class="build-config-footer">
+            <p id="psba-build-config-status" class="muted auto-status"></p>
+            <div class="build-config-actions"><button id="psba-build-config-cancel" class="quiet-button" type="button">Hủy</button><button id="psba-build-config-confirm" class="primary-button" type="button" disabled>Xác nhận & bật tự chọn + build + Bond</button></div>
+          </div>
+        </div>
+      </section>
+      <div id="psba-main-view" class="body">
         <p id="psba-status" class="status">Đang đọc dữ liệu game…</p>
         <label for="psba-pokemon">Pokémon đang chơi</label>
         <div class="pokemon-row">
@@ -146,13 +165,6 @@
         <div class="section-title"><span>Move set gợi ý cho Partner</span><button id="psba-load-moveset" class="text-button" type="button">Tải gợi ý</button></div>
         <div id="psba-moveset" class="moveset-list"><p class="muted">Chọn Partner để tải move set tham khảo.</p></div>
         <button id="psba-configure-build" class="primary-button" type="button" disabled>Tự build move set</button>
-        <div id="psba-build-config" class="build-config" hidden>
-          <p class="muted">Move mở đầu đang chọn của Partner được thêm sẵn. Danh sách gồm move hệ Normal, các hệ của Partner và move mở đầu; chọn tối đa bốn move, sắp thứ tự ưu tiên và đánh dấu cặp Bond đầu tiên.</p>
-          <div id="psba-build-config-moves" class="build-config-moves"></div>
-          <div id="psba-build-config-bond" class="build-config-bond"></div>
-          <p id="psba-build-config-status" class="muted auto-status"></p>
-          <div class="build-config-actions"><button id="psba-build-config-cancel" class="quiet-button" type="button">Hủy</button><button id="psba-build-config-confirm" class="primary-button" type="button" disabled>Xác nhận & bật tự chọn + build + Bond</button></div>
-        </div>
         <label class="auto-pick-row"><span><input id="psba-auto-build" type="checkbox" disabled> Tự build theo move set</span></label>
         <p id="psba-build-mode-status" class="muted auto-status">Tắt chế độ tự build.</p>
 
@@ -203,6 +215,11 @@
   const ui = {
     panel: shadow.querySelector("#psba-panel"),
     fab: shadow.querySelector("#psba-fab"),
+    mainView: shadow.querySelector("#psba-main-view"),
+    buildScreen: shadow.querySelector("#psba-build-screen"),
+    buildPartner: shadow.querySelector("#psba-build-partner"),
+    buildBack: shadow.querySelector("#psba-build-back"),
+    buildClose: shadow.querySelector("#psba-build-close"),
     status: shadow.querySelector("#psba-status"),
     pokemon: shadow.querySelector("#psba-pokemon"),
     pokemonList: shadow.querySelector("#psba-pokemon-list"),
@@ -218,8 +235,8 @@
     autoBuild: shadow.querySelector("#psba-auto-build"),
     buildModeStatus: shadow.querySelector("#psba-build-mode-status"),
     configureBuild: shadow.querySelector("#psba-configure-build"),
-    buildConfig: shadow.querySelector("#psba-build-config"),
     buildConfigMoves: shadow.querySelector("#psba-build-config-moves"),
+    buildConfigSummary: shadow.querySelector("#psba-build-config-summary"),
     buildConfigBond: shadow.querySelector("#psba-build-config-bond"),
     buildConfigStatus: shadow.querySelector("#psba-build-config-status"),
     buildConfigConfirm: shadow.querySelector("#psba-build-config-confirm"),
@@ -240,6 +257,11 @@
   };
 
   shadow.querySelector("#psba-minimize").addEventListener("click", () => setPanelOpen(false));
+  ui.buildBack.addEventListener("click", closeBuildConfigurator);
+  ui.buildClose.addEventListener("click", () => {
+    closeBuildConfigurator();
+    setPanelOpen(false);
+  });
   ui.fab.addEventListener("click", () => setPanelOpen(true));
   ui.pokemon.addEventListener("change", onPokemonInput);
   ui.pokemon.addEventListener("keydown", (event) => {
@@ -700,8 +722,7 @@
       state.selectedBuild = null;
       state.autoBuildFromMoveset = false;
       state.autoBondFromMoveset = false;
-      buildConfigDraft = null;
-      ui.buildConfig.hidden = true;
+      closeBuildConfigurator();
       lastBuildFetchPokemon = "";
     }
     state.pokemon = nextPokemon;
@@ -896,7 +917,6 @@
     ui.autoBond.disabled = !hasPlan;
     ui.autoBond.checked = Boolean(hasPlan && state.autoBondFromMoveset);
     if (!state.pokemon) {
-      ui.buildConfig.hidden = true;
       const message = document.createElement("p");
       message.className = "muted";
       message.textContent = "Chọn Partner để tải move set tham khảo.";
@@ -972,7 +992,7 @@
         ? "Đang chờ Bond; sẽ ghép cặp bạn chọn và nối move theo thứ tự đã xác nhận."
         : "Đang chờ Bond; sẽ ưu tiên nhóm đang mở rồi thêm move kế tiếp trong lộ trình build."
       : "Bật để tự chọn Bond theo thứ tự game cho phép, tối đa 4 move trong một nhóm.";
-    if (!ui.buildConfig.hidden) renderBuildConfigurator();
+    if (!ui.buildScreen.hidden) renderBuildConfigurator();
   }
 
   const MOVE_TYPE_COLORS = {
@@ -1064,27 +1084,30 @@
         : startingMoves.length >= 2 ? startingMoves.slice(0, 2) : []
     };
     buildConfigFeedback = "";
-    ui.buildConfig.hidden = false;
+    ui.buildPartner.textContent = `${state.pokemon} · ${currentPokemon()?.types?.join(" / ") || "Partner"}`;
+    ui.mainView.hidden = true;
+    ui.buildScreen.hidden = false;
+    ui.panel.classList.add("build-mode");
+    setPanelOpen(true);
     renderBuildConfigurator();
   }
 
   function closeBuildConfigurator() {
     buildConfigDraft = null;
     buildConfigFeedback = "";
-    ui.buildConfig.hidden = true;
+    ui.buildScreen.hidden = true;
+    ui.mainView.hidden = false;
+    ui.panel.classList.remove("build-mode");
   }
 
   function renderBuildConfigurator() {
     if (!buildConfigDraft || normalize(buildConfigDraft.pokemon) !== normalize(state.pokemon)) return;
+    const scrollTop = ui.buildConfigMoves.scrollTop;
     ui.buildConfigMoves.replaceChildren();
     const selectedNames = buildConfigDraft.moves;
     const availableMoves = eligiblePartnerMoves();
     const startingNames = new Set(partnerStartingMoves(currentPokemon()).map((move) => normalize(move.name)));
-    const orderedRows = [
-      ...selectedNames.map((name) => availableMoves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean),
-      ...availableMoves.filter((move) => !selectedNames.some((name) => normalize(name) === normalize(move.name)))
-    ];
-    for (const move of orderedRows) {
+    for (const move of availableMoves) {
       const selectedIndex = selectedNames.findIndex((name) => normalize(name) === normalize(move.name));
       const selected = selectedIndex >= 0;
       const inFirstBond = buildConfigDraft.firstPair.some((name) => normalize(name) === normalize(move.name));
@@ -1144,8 +1167,10 @@
       row.append(icon, details, controls, order);
       ui.buildConfigMoves.append(row);
     }
+    ui.buildConfigMoves.scrollTop = scrollTop;
 
     const pair = buildConfigDraft.firstPair;
+    ui.buildConfigSummary.textContent = `${selectedNames.length}/${MAX_MOVE_SLOTS} move · Ưu tiên: ${selectedNames.join(" → ") || "chưa chọn"}`;
     ui.buildConfigBond.textContent = pair.length === 2
       ? `Bond đầu tiên: ${pair.join(" + ")} · các Bond sau ưu tiên thêm move theo thứ tự trên.`
       : "Chọn đúng hai move bằng ô “Bond đầu” để đặt cặp ghép mở đầu.";
@@ -3109,6 +3134,8 @@
     * { box-sizing: border-box; }
     .panel { position: fixed; z-index: 2147483646; top: 14px; right: 14px; width: min(318px, calc(100vw - 24px)); max-height: min(78vh, 720px); overflow: hidden; display: none; color: #eef4ff; background: #101827; border: 1px solid #394760; border-radius: 14px; box-shadow: 0 16px 48px #0009; font-size: 13px; }
     .panel.open { display: flex; flex-direction: column; }
+    .panel.build-mode { top: 50%; right: auto; left: 50%; width: min(820px, calc(100vw - 24px)); height: min(86vh, 780px); max-height: 92vh; transform: translate(-50%, -50%); }
+    .panel.build-mode > .header, .panel.build-mode > .body { display: none !important; }
     .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(120deg, #1d2a40, #172031); border-bottom: 1px solid #394760; }
     .header strong { display: block; font-size: 16px; letter-spacing: .1px; }
     .eyebrow { color: #f5c76b; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; margin-bottom: 2px; }
@@ -3127,27 +3154,53 @@
     .quiet-button:disabled, .text-button:disabled { opacity: .55; cursor: wait; }
     .primary-button { width: 100%; min-height: 34px; margin: 5px 0; padding: 6px 9px; border: 1px solid #d4ad59; border-radius: 8px; background: linear-gradient(180deg, #3b5687, #283d66); color: #fff0c7; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
     .primary-button:disabled { opacity: .5; cursor: not-allowed; }
-    .build-config[hidden] { display: none !important; }
-    .build-config { display: grid; gap: 7px; margin: 7px 0; padding: 8px; border: 1px solid #596c8d; border-radius: 10px; background: #111d31; }
-    .build-config > .muted { margin: 0; line-height: 1.4; }
-    .build-config-moves { display: grid; gap: 5px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
-    .build-config-move { display: grid; grid-template-columns: 34px minmax(0, 1fr) 77px 42px; align-items: center; gap: 5px; min-height: 47px; padding: 5px; border: 1px solid #344662; border-radius: 8px; background: #17253c; }
+    .build-screen[hidden] { display: none !important; }
+    .build-screen { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; overflow: hidden; }
+    .build-screen-header { display: grid; grid-template-columns: 92px minmax(0, 1fr) 34px; align-items: center; gap: 12px; min-height: 68px; padding: 10px 16px; border-bottom: 1px solid #394760; background: linear-gradient(120deg, #1d2a40, #172031); }
+    .build-screen-heading { min-width: 0; }
+    .build-screen-heading strong { display: block; font-size: 17px; line-height: 1.25; }
+    .build-screen-heading small { display: block; margin-top: 3px; color: #9fb1cc; font-size: 11px; }
+    .build-screen-header .eyebrow { margin: 0 0 2px; }
+    .build-back { min-height: 34px; white-space: nowrap; }
+    .build-config { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 10px; overflow: hidden; margin: 0; padding: 12px 14px; background: #101827; }
+    .build-config-intro { display: grid; gap: 8px; flex: 0 0 auto; }
+    .build-config-intro > .muted { margin: 0; font-size: 11px; line-height: 1.45; }
+    .build-config-summary { overflow-wrap: anywhere; color: #f5d995; font-size: 11px; font-weight: 750; line-height: 1.35; }
+    .build-config-moves { display: grid; flex: 1 1 auto; min-height: 0; gap: 7px; overflow-y: auto; padding: 2px 5px 2px 0; scrollbar-gutter: stable; }
+    .build-config-move { display: grid; grid-template-columns: 42px minmax(0, 1fr) 92px 44px; align-items: center; gap: 10px; min-height: 82px; padding: 9px 10px; border: 1px solid #344662; border-radius: 10px; background: #17253c; }
     .build-config-move.selected { border-color: #ad8d50; background: #222b36; }
-    .move-icon { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
+    .build-config-move .move-icon { width: 40px; height: 40px; flex: 0 0 auto; image-rendering: pixelated; }
     .build-config-details { display: grid; gap: 2px; min-width: 0; }
-    .build-config-details strong { overflow-wrap: anywhere; font-size: 10px; line-height: 1.2; }
-    .build-config-details small { color: #98a9c3; font-size: 8px; line-height: 1.2; }
-    .build-config-details .build-config-description { overflow-wrap: anywhere; color: #d1dced; font-size: 9px; line-height: 1.3; }
+    .build-config-details strong { overflow-wrap: anywhere; font-size: 13px; line-height: 1.2; }
+    .build-config-details small { color: #98a9c3; font-size: 10px; line-height: 1.25; }
+    .build-config-details .build-config-description { overflow-wrap: anywhere; color: #d1dced; font-size: 11px; line-height: 1.35; }
     .build-config-controls { display: grid; gap: 3px; }
-    label.config-choice { display: flex; justify-content: flex-start; gap: 4px; margin: 0; color: #bccbe0; font-size: 8px; line-height: 1.1; cursor: pointer; }
-    label.config-choice input { width: 12px; height: 12px; flex: 0 0 12px; margin: 0; padding: 0; accent-color: #f5c76b; }
+    label.config-choice { display: flex; justify-content: flex-start; gap: 5px; margin: 0; color: #bccbe0; font-size: 10px; line-height: 1.2; cursor: pointer; }
+    label.config-choice input { width: 14px; height: 14px; flex: 0 0 14px; margin: 0; padding: 0; accent-color: #f5c76b; }
     label.bond-choice { color: #f2cb76; }
     .build-config-order { display: grid; gap: 3px; }
-    .order-button { width: 20px; height: 18px; padding: 0; line-height: 1; }
-    .build-config-bond { padding: 6px 7px; border-radius: 6px; background: #2b291f; color: #f4d48a; font-size: 9px; font-weight: 700; line-height: 1.35; }
-    .build-config-actions { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 5px; }
-    .build-config-actions .quiet-button { min-height: 33px; padding: 0 6px; font-size: 10px; }
-    .build-config-actions .primary-button { margin: 0; font-size: 10px; }
+    .order-button { width: 24px; height: 22px; padding: 0; line-height: 1; }
+    .build-config-bond { padding: 8px 10px; border-radius: 8px; background: #2b291f; color: #f4d48a; font-size: 11px; font-weight: 700; line-height: 1.4; }
+    .build-config-footer { flex: 0 0 auto; padding-top: 8px; border-top: 1px solid #344662; }
+    .build-config-footer .auto-status { margin: 0 0 7px; font-size: 11px; }
+    .build-config-actions { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+    .build-config-actions .quiet-button { min-height: 38px; padding: 0 8px; font-size: 11px; }
+    .build-config-actions .primary-button { min-height: 38px; margin: 0; font-size: 11px; }
+    @media (max-width: 560px) {
+      .panel.build-mode { width: calc(100vw - 16px); height: 92vh; max-height: 94vh; }
+      .build-screen-header { grid-template-columns: 76px minmax(0, 1fr) 32px; gap: 7px; padding: 8px; }
+      .build-screen-heading strong { font-size: 14px; }
+      .build-screen-heading small { font-size: 9px; }
+      .build-config { padding: 9px 8px; }
+      .build-config-move { grid-template-columns: 34px minmax(0, 1fr) 76px 34px; gap: 6px; min-height: 76px; padding: 7px; }
+      .build-config-move .move-icon { width: 32px; height: 32px; }
+      .build-config-details strong { font-size: 11px; }
+      .build-config-details small { font-size: 9px; }
+      .build-config-details .build-config-description { font-size: 10px; }
+      label.config-choice { font-size: 9px; }
+      .build-config-actions { grid-template-columns: 68px minmax(0, 1fr); gap: 5px; }
+      .build-config-actions .primary-button { font-size: 9px; }
+    }
     .types { min-height: 26px; display: flex; align-items: center; gap: 6px; margin: 5px 0 8px; }
     .type-pill { border-radius: 999px; background: #31415c; color: #dceaff; padding: 3px 8px; font-size: 10px; font-weight: 700; }
     .muted, .section-title small { color: #9baac0; font-size: 11px; }
