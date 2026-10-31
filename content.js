@@ -313,7 +313,7 @@
   });
   for (const selector of ["#cards", "#scr-levelup", "#lvl-reroll", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-item", "#item-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
     const element = document.querySelector(selector);
-    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move", "data-item", "title", "aria-label", "disabled", "aria-disabled", "data-count", "data-remaining", "data-rerolls"] });
+    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move", "data-item", "title", "aria-label", "disabled", "aria-disabled", "data-count", "data-remaining", "data-rerolls", "data-tap"] });
   }
 
   setPanelOpen(false);
@@ -1330,6 +1330,7 @@
     const button = levelRerollButton();
     if (!button || !button.isConnected || button.disabled || button.hasAttribute("disabled")) return false;
     if (button.getAttribute("aria-disabled") === "true" || button.classList.contains("disabled")) return false;
+    if (button.getAttribute("data-tap") === "0") return false;
     if (button.classList.contains("hidden") || getComputedStyle(button).display === "none" || getComputedStyle(button).visibility === "hidden") return false;
 
     const countAttributes = ["data-count", "data-remaining", "data-rerolls"];
