@@ -9,6 +9,8 @@
   const AUTO_PICK_MIN_SCORE = 6;
   const AUTO_PICK_NEAR_TIE_GAP = 6;
   const AUTO_PICK_DELAY_MS = 750;
+  const AUTO_REROLL_DELAY_MS = 650;
+  const AUTO_REROLL_VERIFY_MS = 700;
   const AUTO_BOND_DELAY_MS = 500;
   const AUTO_ITEM_DELAY_MS = 600;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
@@ -70,6 +72,7 @@
     manualPokemon: false,
     strategy: "balanced",
     autoPick: true,
+    autoReroll: true,
     autoBuildFromMoveset: false,
     autoBondFromMoveset: false,
     autoPickItems: true,
@@ -91,6 +94,8 @@
   let autoPickTimer = null;
   let autoPickSignature = "";
   let pendingAutoPickSignature = "";
+  let autoRerollSignature = "";
+  let levelCardMutationVersion = 0;
   let isBondVisible = false;
   let bondAutoTimer = null;
   let bondWatchdogTimer = null;
@@ -155,7 +160,8 @@
         <div class="section-title"><span>Đề xuất ở lần lên cấp này</span><small id="psba-level">chờ thẻ</small></div>
         <div id="psba-recommendations" class="recommendations"><p class="muted">Khi màn hình chọn thẻ xuất hiện, gợi ý sẽ hiện ở đây.</p></div>
         <label class="auto-pick-row"><span><input id="psba-auto-pick" type="checkbox"> Tự chọn thẻ</span></label>
-        <p id="psba-auto-status" class="muted auto-status">Tự chọn theo điểm; nếu chênh không quá 6 điểm thì ưu tiên move set hoặc skill mục tiêu.</p>
+        <label class="auto-pick-row"><span><input id="psba-auto-reroll" type="checkbox"> Tự reroll thẻ yếu</span></label>
+        <p id="psba-auto-status" class="muted auto-status">Reroll khi điểm cao nhất dưới 7 hoặc không có thẻ theo move set; sau đó tự chọn thẻ tốt nhất còn lại.</p>
 
         <div class="section-title"><span>Item phù hợp cho lượt này</span><small id="psba-item-label">chờ item</small></div>
         <div id="psba-item-recommendations" class="recommendations"><p class="muted">Khi item xuất hiện, extension sẽ xếp hạng theo Partner và move set.</p></div>
@@ -187,6 +193,7 @@
     types: shadow.querySelector("#psba-types"),
     strategy: shadow.querySelector("#psba-strategy"),
     autoPick: shadow.querySelector("#psba-auto-pick"),
+    autoReroll: shadow.querySelector("#psba-auto-reroll"),
     autoStatus: shadow.querySelector("#psba-auto-status"),
     autoItems: shadow.querySelector("#psba-auto-items"),
     itemStatus: shadow.querySelector("#psba-item-status"),
@@ -228,6 +235,12 @@
   });
   ui.autoPick.addEventListener("change", () => {
     state.autoPick = ui.autoPick.checked;
+    persistState();
+    refreshRecommendations();
+  });
+  ui.autoReroll.addEventListener("change", () => {
+    state.autoReroll = ui.autoReroll.checked;
+    autoRerollSignature = "";
     persistState();
     refreshRecommendations();
   });
@@ -280,6 +293,7 @@
   });
   shadow.querySelector("#psba-reset").addEventListener("click", resetRun);
   ui.autoPick.checked = state.autoPick;
+  ui.autoReroll.checked = state.autoReroll;
   ui.autoItems.checked = state.autoPickItems;
 
   const cardsRoot = document.querySelector("#cards");
@@ -289,16 +303,17 @@
   bondCardsRoot?.addEventListener("click", onGameBondCardClick, true);
   itemCardsRoot?.addEventListener("click", onGameItemCardClick, true);
   document.addEventListener("keydown", onGameLevelUpKeydown, true);
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((records) => {
+    if (records.some((record) => cardsRoot.contains(record.target))) levelCardMutationVersion += 1;
     observePartnerName();
     updateLevelUpState();
     updateBondState();
     updateItemState();
     updateGameOverState();
   });
-  for (const selector of ["#cards", "#scr-levelup", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-item", "#item-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
+  for (const selector of ["#cards", "#scr-levelup", "#lvl-reroll", "#scr-bond", "#bond-sub", "#bond-cards", "#scr-item", "#item-cards", "#scr-over", "#menu-partner-name", "#res-name", "#starter-info"]) {
     const element = document.querySelector(selector);
-    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move", "data-item", "title", "aria-label"] });
+    if (element) observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "data-id", "data-move", "data-item", "title", "aria-label", "disabled", "aria-disabled", "data-count", "data-remaining", "data-rerolls"] });
   }
 
   setPanelOpen(false);
@@ -328,6 +343,7 @@
       manualPokemon: state.manualPokemon,
       strategy: state.strategy,
       autoPick: state.autoPick,
+      autoReroll: state.autoReroll,
       autoBuildFromMoveset: state.autoBuildFromMoveset,
       autoBondFromMoveset: state.autoBondFromMoveset,
       autoPickItems: state.autoPickItems,
@@ -356,6 +372,7 @@
         state.manualPokemon = Boolean(value.manualPokemon);
         state.strategy = Object.prototype.hasOwnProperty.call(STRATEGIES, value.strategy) ? value.strategy : "balanced";
         state.autoPick = value.autoPick === undefined ? true : Boolean(value.autoPick);
+        state.autoReroll = value.autoReroll === undefined ? true : Boolean(value.autoReroll);
         state.autoBuildFromMoveset = Boolean(value.autoBuildFromMoveset);
         state.autoBondFromMoveset = Boolean(value.autoBondFromMoveset);
         state.autoPickItems = value.autoPickItems === undefined ? true : Boolean(value.autoPickItems);
@@ -483,6 +500,7 @@
     ui.pokemon.value = state.pokemon;
     ui.strategy.value = state.strategy;
     ui.autoPick.checked = state.autoPick;
+    ui.autoReroll.checked = state.autoReroll;
     ui.autoItems.checked = state.autoPickItems;
     renderTypes();
     renderTargets();
@@ -935,6 +953,7 @@
     autoPickTimer = null;
     pendingAutoPickSignature = "";
     autoPickSignature = "";
+    autoRerollSignature = "";
     lastTrackedSelectionSignature = "";
     lastTrackedSelectionAt = 0;
     clearBondTracking();
@@ -960,6 +979,7 @@
         if (autoPickTimer) clearTimeout(autoPickTimer);
         autoPickTimer = null;
         pendingAutoPickSignature = "";
+        autoRerollSignature = "";
         ui.autoStatus.textContent = "Đang chờ lần lên cấp tiếp theo.";
       }
     }
@@ -1293,7 +1313,71 @@
   function scoredCandidateSignature(candidates) {
     const scores = candidates.map((candidate) => `${normalize(candidate.text)}=${candidate.score}:${normalize(candidate.reasons.join(" "))}`).join("||");
     const preferences = `${state.strategy}:${state.autoBuildFromMoveset}:${activeMovePriorityNames().map(normalize).join(",")}:${activeCardPriorityNames().map(normalize).join(",")}`;
-    return `${cardSelectionSignature()}::${scores}::${preferences}`;
+    return `${cardSelectionSignature()}::${scores}::${preferences}::reroll:${rerollControlSignature()}`;
+  }
+
+  function levelRerollButton() {
+    return document.querySelector("#lvl-reroll");
+  }
+
+  function rerollControlSignature() {
+    const button = levelRerollButton();
+    if (!button) return "missing";
+    return `${button.outerHTML}:${Boolean(button.disabled)}:${button.getAttribute("aria-disabled") || ""}`;
+  }
+
+  function isRerollAvailable() {
+    const button = levelRerollButton();
+    if (!button || !button.isConnected || button.disabled || button.hasAttribute("disabled")) return false;
+    if (button.getAttribute("aria-disabled") === "true" || button.classList.contains("disabled")) return false;
+    if (button.classList.contains("hidden") || getComputedStyle(button).display === "none" || getComputedStyle(button).visibility === "hidden") return false;
+
+    const countAttributes = ["data-count", "data-remaining", "data-rerolls"];
+    for (const element of [button, ...button.querySelectorAll("[data-count], [data-remaining], [data-rerolls]")]) {
+      for (const attribute of countAttributes) {
+        const raw = element.getAttribute(attribute);
+        if (raw !== null && /^\s*\d+\s*$/.test(raw) && Number(raw) <= 0) return false;
+      }
+    }
+
+    const text = button.innerText || button.textContent || "";
+    const countMatch = text.match(/(?:rerolls?|remaining|left|available|lượt)\D{0,8}(\d+)/i)
+      || text.match(/(\d+)\s*(?:rerolls?|rolls?|left|remaining|lượt)/i);
+    if (countMatch && Number(countMatch[1]) <= 0) return false;
+    return true;
+  }
+
+  function unfinishedBuildMoveNames() {
+    const plannedNames = state.partnerBuild?.moves?.map((move) => move.name) || [];
+    return plannedNames.filter((name) => {
+      const learned = state.learnedMoves.find((item) => normalize(item.name) === normalize(name));
+      return !learned || !learned.evolved;
+    });
+  }
+
+  function candidateMatchesActiveMoveSet(candidate) {
+    if (candidate.evolution) return true;
+    const unfinishedMoves = unfinishedBuildMoveNames();
+    if (candidate.move) {
+      return unfinishedMoves.some((name) => normalize(name) === normalize(candidate.move.name));
+    }
+    if (candidate.stat) {
+      const prioritizedStats = activeCardPriorityNames();
+      if (prioritizedStats.some((name) => normalize(name) === normalize(candidate.stat))) return true;
+      return unfinishedMoves.some((name) => normalize(getMoveData(name)?.evoStat) === normalize(candidate.stat));
+    }
+    return false;
+  }
+
+  function autoRerollReason(candidates) {
+    const best = candidates[0];
+    if (!best) return "";
+    if (best.score <= AUTO_PICK_MIN_SCORE) return `điểm cao nhất chỉ ${best.score}, dưới ngưỡng 7`;
+    if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon() && unfinishedBuildMoveNames().length
+      && !candidates.some(candidateMatchesActiveMoveSet)) {
+      return "cả ba thẻ đều không khớp move set Partner";
+    }
+    return "";
   }
 
   function chooseAutoCandidate(candidates) {
@@ -1337,18 +1421,63 @@
       return;
     }
 
+    const rerollReason = autoRerollReason(candidates);
+    if (state.autoReroll && rerollReason && autoRerollSignature !== planSignature && isRerollAvailable()) {
+      ui.autoStatus.textContent = `Đang reroll vì ${rerollReason}…`;
+      pendingAutoPickSignature = planSignature;
+      autoPickTimer = setTimeout(() => {
+        autoPickTimer = null;
+        pendingAutoPickSignature = "";
+        const currentScreen = document.querySelector("#scr-levelup");
+        const currentCandidates = cardNodes().map(candidateFromCard).filter((candidate) => candidate.text).map(scoreCandidate).sort((a, b) => b.score - a.score);
+        if (!state.autoPick || !state.autoReroll || !isLevelUpVisible || !currentScreen || currentScreen.classList.contains("hidden") || getComputedStyle(currentScreen).display === "none"
+          || scoredCandidateSignature(currentCandidates) !== planSignature || !autoRerollReason(currentCandidates) || !isRerollAvailable()) return;
+
+        const rerollButton = levelRerollButton();
+        const cardsBeforeReroll = cardSelectionSignature();
+        const cardMutationVersionBefore = levelCardMutationVersion;
+        const controlBeforeReroll = rerollControlSignature();
+        autoRerollSignature = planSignature;
+        rerollButton.click();
+        ui.autoStatus.textContent = `Reroll đã bấm (${rerollReason}); đang chờ thẻ mới…`;
+        setTimeout(() => {
+          const cardsChanged = cardSelectionSignature() !== cardsBeforeReroll;
+          const cardContentChanged = levelCardMutationVersion !== cardMutationVersionBefore;
+          const controlChanged = rerollControlSignature() !== controlBeforeReroll;
+          if (cardsChanged || cardContentChanged || controlChanged) {
+            autoRerollSignature = "";
+            updateLevelUpState();
+            return;
+          }
+          ui.autoStatus.textContent = "Game không xác nhận reroll; đang dùng lựa chọn tốt nhất hiện có.";
+          refreshRecommendations();
+        }, AUTO_REROLL_VERIFY_MS);
+      }, AUTO_REROLL_DELAY_MS);
+      return;
+    }
+
     const decision = chooseAutoCandidate(candidates);
     const best = decision.candidate;
     const autoEligible = Boolean(best && (decision.gap <= AUTO_PICK_NEAR_TIE_GAP || best.score > AUTO_PICK_MIN_SCORE));
     if (!autoEligible) {
-      ui.autoStatus.textContent = `Chênh ${Math.round(decision.gap)} điểm và thẻ đầu chưa vượt 6 điểm; đang chờ lựa chọn rõ hơn.`;
+      const rerollNote = state.autoReroll && rerollReason
+        ? autoRerollSignature === planSignature
+          ? "Reroll không làm thay đổi thẻ; "
+          : "Không còn lượt reroll; "
+        : "";
+      ui.autoStatus.textContent = `${rerollNote}chênh ${Math.round(decision.gap)} điểm và thẻ đầu chưa vượt 6 điểm; đang chờ lựa chọn rõ hơn.`;
       return;
     }
 
     const ruleText = decision.rule === "move-priority"
       ? `theo ưu tiên move #${decision.priorityIndex + 1}`
       : decision.rule === "build-direction" ? `theo hướng ${STRATEGIES[state.strategy]}` : "theo điểm cao nhất";
-    ui.autoStatus.textContent = `Sẽ tự chọn ${best.move?.name || best.text.slice(0, 32)} ${ruleText} sau khi thẻ ổn định.`;
+    const rerollNote = state.autoReroll && rerollReason
+      ? autoRerollSignature === planSignature
+        ? "reroll không đổi thẻ, "
+        : "đã hết lượt reroll, "
+      : "";
+    ui.autoStatus.textContent = `Sẽ ${rerollNote}tự chọn ${best.move?.name || best.text.slice(0, 32)} ${ruleText} sau khi thẻ ổn định.`;
     pendingAutoPickSignature = planSignature;
     autoPickTimer = setTimeout(() => {
       autoPickTimer = null;
