@@ -275,7 +275,7 @@
     bondManualOverride = false;
     persistState();
     ui.bondStatus.textContent = state.autoBondFromMoveset
-      ? "Đang chờ Bond; dùng cặp trong build hoặc chấm phối hợp các move của Partner."
+      ? "Đang chờ Bond; ưu tiên cặp mở đầu và nhóm bổ trợ tiếp theo trong build Partner."
       : "Tắt tự chọn Bond; bạn vẫn có thể xem gợi ý và ghép thủ công.";
     updateBondState();
   });
@@ -1037,9 +1037,18 @@
       .toLowerCase();
     const fullText = `${parts.join(" ")} ${attributes.join(" ")}`;
     const normalizedText = normalize(fullText);
-    const moves = moveData
-      .filter((item) => normalizedText.includes(normalize(item.name)))
-      .sort((a, b) => normalize(b.name).length - normalize(a.name).length);
+    const matches = moveData
+      .map((item) => ({ item, name: normalize(item.name), at: normalizedText.indexOf(normalize(item.name)) }))
+      .filter((match) => match.at >= 0)
+      .sort((a, b) => a.at - b.at || b.name.length - a.name.length);
+    const moves = [];
+    const occupiedRanges = [];
+    for (const match of matches) {
+      const end = match.at + match.name.length;
+      if (occupiedRanges.some(([start, stop]) => match.at < stop && end > start)) continue;
+      occupiedRanges.push([match.at, end]);
+      moves.push(match.item);
+    }
     const move = moves[0] || null;
     const evolution = /evol|golden|gold card|evolved/.test(normalizedText) || /\bevo\b|evolution|golden/.test(classes);
     const stat = move ? "" : EVO_STATS.find((item) => normalizedText.includes(normalize(item))) || "";
@@ -1825,8 +1834,10 @@
           return sum + (index < 0 ? bondPriority(name) : Math.max(1, MAX_MOVE_SLOTS - index) * 8);
         }, 0);
         const offPlanPenalty = plan ? names.filter((name) => !plan.names.some((item) => normalize(item) === normalize(name))).length * 24 : 0;
-        const explicitBonus = explicitPairs.some((group) => selectedNames.some((name) => group.some((item) => normalize(item) === normalize(name)))
-          && names.some((name) => explicitPairs.some((group) => group.some((item) => normalize(item) === normalize(name)))) ? 60 : 0;
+        const explicitBonus = explicitPairs.some((group) =>
+          selectedNames.some((name) => group.some((item) => normalize(item) === normalize(name)))
+          && names.some((name) => group.some((item) => normalize(item) === normalize(name)))
+        ) ? 60 : 0;
         const nextBonus = preferredNext && names.some((name) => normalize(name) === normalize(preferredNext)) ? 80 : 0;
         return { candidate, names, score: groupScore + priority + explicitBonus + nextBonus - offPlanPenalty };
       })
