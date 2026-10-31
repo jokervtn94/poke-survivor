@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.10
+# PokéSurvivor Build Assistant 0.3.11
 
 Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và ghép Bond theo build. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải ZIP v0.3.10 và giải nén.
+1. Tải ZIP v0.3.11 và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -25,7 +25,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và gợi ý cặp Bond theo các move đã học.
 - **Gợi ý Bond theo Partner:** hiển thị cặp ghép được hướng dẫn trong build cộng đồng; nếu trang không nêu cặp Bond, xếp cặp ưu tiên từ move set theo độ phối hợp và thứ tự move.
-- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Khi hộp thoại Bond hiện ra, extension nhận diện bước chọn move thứ nhất/thứ hai, ưu tiên cặp được hướng dẫn, rồi bấm hai move trong game. Nếu không xác định được bước hoặc game không chuyển trạng thái sau click, extension dừng và báo để người chơi chọn thủ công.
+- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Khi hộp thoại Bond hiện ra, extension nhận diện cả prompt “Choose which move joins…” và “Which move do you bond … with?”, đồng thời dùng nút **Atrás** của game để xác nhận đã sang bước hai. Extension ưu tiên cặp được hướng dẫn, bấm move đầu rồi tự chọn move ghép. Nếu game chưa nhận click đầu, extension thử phím số tương ứng một lần; nếu vẫn không chuyển bước, extension báo để người chơi chọn thủ công.
 - **Reset lượt:** khi Pokémon bị hạ và game hiện `#scr-over`, xóa skill, Bond, thẻ chỉ số và cấp độ của lượt; giữ lựa chọn Pokémon và hướng build.
 
 ## Cách dùng Auto build
