@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.15",
-  "description": "Xây build theo Partner, lọc move trong prompt Bond và chọn phương án ghép tốt nhất đang hiện.",
+  "version": "0.3.16",
+  "description": "Xây build theo Partner, chờ game mở khóa thẻ Bond rồi tự click move ghép.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [
