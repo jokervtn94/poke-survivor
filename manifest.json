@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.13",
-  "description": "Xây build theo Partner và tự chọn Bond đúng thứ tự game cho phép, tối đa bốn move mỗi nhóm.",
+  "version": "0.3.14",
+  "description": "Xây build theo Partner, nhận diện prompt Bond và tự chọn đúng thứ tự game cho phép.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [

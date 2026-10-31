@@ -420,6 +420,7 @@
       }
       syncUiFromState();
       loadPartnerMovesetIfNeeded();
+      updateBondState();
     } catch (_error) {
       ui.status.textContent = "Không đọc được cài đặt đã lưu; trợ lý vẫn hoạt động trong phiên này.";
     }
@@ -442,6 +443,7 @@
       observePartnerName();
       updateLevelUpState();
       loadPartnerMovesetIfNeeded();
+      updateBondState();
       ui.status.textContent = `Đã nạp ${pokemonData.length} Pokémon và ${moveData.length} move từ trang chính thức.`;
       refreshRecommendations();
     } catch (_error) {
@@ -714,6 +716,7 @@
       persistState();
       renderPartnerBuild();
       refreshRecommendations();
+      updateBondState();
       ui.buildModeStatus.textContent = `Đã nạp ${build.moves.length} move tham khảo cho ${pokemonName}.`;
     } catch (error) {
       if (normalize(state.pokemon) === pokemonKey) {
@@ -1694,6 +1697,24 @@
     );
   }
 
+  function bondPromptMoveNames() {
+    const prompt = normalize(document.querySelector("#bond-sub")?.textContent || "");
+    if (!prompt || !moveData.length) return [];
+    const matches = moveData
+      .map((move) => ({ move, name: normalize(move.name), at: prompt.indexOf(normalize(move.name)) }))
+      .filter((item) => item.name && item.at >= 0)
+      .sort((a, b) => a.at - b.at || b.name.length - a.name.length);
+    const names = [];
+    const occupied = [];
+    for (const item of matches) {
+      const end = item.at + item.name.length;
+      if (occupied.some(([start, stop]) => item.at < stop && end > start)) continue;
+      occupied.push([item.at, end]);
+      names.push(item.move.name);
+    }
+    return names;
+  }
+
   function sameMoveGroup(left, right) {
     const a = left.map(normalize).sort();
     const b = right.map(normalize).sort();
@@ -1868,6 +1889,21 @@
     }
     const phase = bondPhase();
     const candidates = bondCandidates();
+    if (phase === "second") {
+      // The current game often opens directly on the second choice and names
+      // the selected move or whole group in the prompt. Recover it from there
+      // when this content script did not observe the earlier click.
+      const promptGroup = bondPromptMoveNames();
+      if (promptGroup.length) {
+        bondPendingFirstGroup = promptGroup;
+        bondPendingFirstMove = formatBondNames(promptGroup);
+      }
+      // A manual first choice should still allow Auto Bond to select the
+      // remaining move after the prompt advances. A manual second choice stays manual.
+      if (bondManualOverride && bondPendingFirstGroup.length && !bondPendingSecondGroup.length) {
+        bondManualOverride = false;
+      }
+    }
     if (phase === "second" && bondWatchdogTimer) {
       clearTimeout(bondWatchdogTimer);
       bondWatchdogTimer = null;
@@ -1900,7 +1936,8 @@
 
     if (!bondPendingFirstGroup.length) {
       const selected = bondCardNodes().find((node) => node.matches('[aria-selected="true"], [aria-pressed="true"], .selected, .is-selected, .chosen'));
-      const inferred = selected ? candidateMoveNames(candidateFromCard(selected)) : [];
+      const promptGroup = bondPromptMoveNames();
+      const inferred = promptGroup.length ? promptGroup : selected ? candidateMoveNames(candidateFromCard(selected)) : [];
       if (inferred.length) {
         bondPendingFirstGroup = inferred;
         bondPendingFirstMove = formatBondNames(inferred);
@@ -1954,6 +1991,12 @@
           const shortcutSent = pressBondCardShortcut(current);
           if (shortcutSent) ui.bondStatus.textContent = `Click chưa chuyển bước; đã gửi phím chọn ${candidateLabel} để xác nhận move đầu.`;
         }, AUTO_BOND_SHORTCUT_FALLBACK_MS);
+      } else if (phase === "second") {
+        setTimeout(() => {
+          if (!state.autoBondFromMoveset || !bondScreenVisible() || bondPhase() !== "second") return;
+          const shortcutSent = pressBondCardShortcut(current);
+          if (shortcutSent) ui.bondStatus.textContent = `Click chưa được game nhận; đã gửi phím chọn ${candidateLabel} để xác nhận move ghép.`;
+        }, AUTO_BOND_SHORTCUT_FALLBACK_MS);
       }
       if (bondWatchdogTimer) clearTimeout(bondWatchdogTimer);
       bondWatchdogTimer = setTimeout(() => {
@@ -1979,11 +2022,19 @@
     if (!candidate?.move) return;
     const names = candidateMoveNames(candidate);
     const label = formatBondNames(names);
+    const phase = bondPhase();
+    if (phase === "second") {
+      const promptGroup = bondPromptMoveNames();
+      if (promptGroup.length) {
+        bondPendingFirstGroup = promptGroup;
+        bondPendingFirstMove = formatBondNames(promptGroup);
+      }
+    }
     if (bondAutoTimer) clearTimeout(bondAutoTimer);
     bondAutoTimer = null;
     bondAttemptSignature = "";
     bondManualOverride = true;
-    if (bondPhase() === "first" || !bondPendingFirstMove) {
+    if (phase === "first" || !bondPendingFirstMove) {
       bondPendingFirstGroup = names;
       bondPendingFirstMove = label;
       bondPendingSecondMove = "";

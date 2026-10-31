@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.13
+# PokéSurvivor Build Assistant 0.3.14
 
 Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và tự build Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải [ZIP v0.3.13](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.13.zip) và giải nén.
+1. Tải [ZIP v0.3.14](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.14.zip) và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -26,7 +26,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và theo dõi các nhóm Bond tối đa bốn move.
 - **Lộ trình Bond theo luật game:** lần ghép đầu tạo nhóm hai move. Nếu nhóm còn 2–3 move, Bond sau thêm đúng một move lẻ vào nhóm đó; khi không có nhóm dang dở, game ghép hai move lẻ để tạo nhóm mới. Vì vậy, nhóm bốn move được tạo theo chuỗi `2 → 3 → 4`, cần ba lần ghép, không phải hai cặp độc lập. Thứ tự move được xếp theo tương tác giữa sát thương, buff Physical/Special, trạng thái hỗ trợ Hex, khống chế, diện rộng và đòn đánh mục tiêu đơn.
 - **Gợi ý ghép nhóm:** đọc danh tính các move trong thẻ Bond để nhận diện nhóm đã ghép; ưu tiên nhóm 2–3 move đang mở và move kế tiếp trong lộ trình Partner.
-- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Ở lần đầu, extension chọn cặp ưu tiên; ở lần sau, chọn nhóm đang mở làm lựa chọn đầu và chọn đúng một move lẻ tiếp theo làm lựa chọn thứ hai. Nếu chưa nhận diện được nhóm hoặc game chưa chuyển bước sau click và phím số dự phòng, extension dừng để tránh chọn cặp không hợp lệ.
+- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Ở lần đầu, extension chọn cặp ưu tiên; ở lần sau, chọn nhóm đang mở làm lựa chọn đầu và chọn đúng một move lẻ tiếp theo làm lựa chọn thứ hai. Nếu game mở thẳng câu hỏi “Which move do you bond … with?” hoặc “Which move joins …”, extension đọc move/nhóm đã nêu trong câu hỏi nên vẫn tiếp tục được khi bước đầu đã chọn trước hoặc script vào giữa hộp thoại. Click có dự phòng phím số cho cả hai bước.
 - **Reset lượt:** khi Pokémon bị hạ và game hiện `#scr-over`, xóa skill, Bond, thẻ chỉ số và cấp độ của lượt; giữ lựa chọn Pokémon và hướng build.
 
 ## Cách dùng Auto build
