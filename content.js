@@ -147,11 +147,11 @@
         <div id="psba-moveset" class="moveset-list"><p class="muted">Chọn Partner để tải move set tham khảo.</p></div>
         <button id="psba-configure-build" class="primary-button" type="button" disabled>Tự build move set</button>
         <div id="psba-build-config" class="build-config" hidden>
-          <p class="muted">Chọn các move muốn lấy, sắp thứ tự ưu tiên và đánh dấu đúng hai move để ghép Bond đầu tiên. Biểu tượng hiển thị hệ và nhóm move.</p>
+          <p class="muted">Move mở đầu đang chọn của Partner được thêm sẵn. Danh sách gồm move hệ Normal, các hệ của Partner và move mở đầu; chọn tối đa bốn move, sắp thứ tự ưu tiên và đánh dấu cặp Bond đầu tiên.</p>
           <div id="psba-build-config-moves" class="build-config-moves"></div>
           <div id="psba-build-config-bond" class="build-config-bond"></div>
           <p id="psba-build-config-status" class="muted auto-status"></p>
-          <div class="build-config-actions"><button id="psba-build-config-cancel" class="quiet-button" type="button">Hủy</button><button id="psba-build-config-confirm" class="primary-button" type="button" disabled>Xác nhận & bật Auto build + Bond</button></div>
+          <div class="build-config-actions"><button id="psba-build-config-cancel" class="quiet-button" type="button">Hủy</button><button id="psba-build-config-confirm" class="primary-button" type="button" disabled>Xác nhận & bật tự chọn + build + Bond</button></div>
         </div>
         <label class="auto-pick-row"><span><input id="psba-auto-build" type="checkbox" disabled> Tự build theo move set</span></label>
         <p id="psba-build-mode-status" class="muted auto-status">Tắt chế độ tự build.</p>
@@ -279,7 +279,7 @@
     updateItemState();
   });
   ui.autoBuild.addEventListener("change", () => {
-    state.autoBuildFromMoveset = Boolean(ui.autoBuild.checked && hasPartnerBuildForCurrentPokemon());
+    state.autoBuildFromMoveset = Boolean(ui.autoBuild.checked && hasAutoBuildPlan());
     ui.autoBuild.checked = state.autoBuildFromMoveset;
     persistState();
     renderPartnerBuild();
@@ -291,7 +291,7 @@
   ui.buildConfigMoves.addEventListener("change", onBuildConfigMoveChange);
   ui.buildConfigMoves.addEventListener("click", onBuildConfigMoveClick);
   ui.autoBond.addEventListener("change", () => {
-    state.autoBondFromMoveset = Boolean(ui.autoBond.checked && hasPartnerBuildForCurrentPokemon());
+    state.autoBondFromMoveset = Boolean(ui.autoBond.checked && hasAutoBuildPlan());
     ui.autoBond.checked = state.autoBondFromMoveset;
     if (bondAutoTimer) clearTimeout(bondAutoTimer);
     bondAutoTimer = null;
@@ -448,7 +448,7 @@
         state.statPicks = Array.isArray(value.statPicks) ? value.statPicks.filter((item) => typeof item === "string").slice(-12) : [];
         state.heldItem = typeof value.heldItem === "string" ? value.heldItem : "";
         state.lastLevel = Number.isFinite(Number(value.lastLevel)) ? Number(value.lastLevel) : 0;
-        if (!hasPartnerBuildForCurrentPokemon()) {
+        if (!hasAutoBuildPlan()) {
           state.autoBuildFromMoveset = false;
           state.autoBondFromMoveset = false;
         }
@@ -646,20 +646,45 @@
     return Boolean(state.partnerBuild && normalize(state.partnerBuild.pokemon) === normalize(state.pokemon) && state.partnerBuild.moves.length);
   }
 
+  function eligiblePartnerMoves() {
+    const pokemon = currentPokemon();
+    if (!pokemon || !moveData.length) return [];
+    const types = new Set(["normal", ...(pokemon.types || []).map(normalize)]);
+    const startingMoves = new Set(partnerStartingMoves(pokemon).map((move) => normalize(move.name)));
+    return moveData.filter((move) => types.has(normalize(move.type)) || startingMoves.has(normalize(move.name)));
+  }
+
+  function hasSelectedBuildForCurrentPokemon() {
+    return Boolean(state.selectedBuild
+      && normalize(state.selectedBuild.pokemon) === normalize(state.pokemon)
+      && Array.isArray(state.selectedBuild.moves)
+      && state.selectedBuild.moves.length >= 2
+      && Array.isArray(state.selectedBuild.firstPair)
+      && state.selectedBuild.firstPair.length === 2);
+  }
+
+  function hasAutoBuildPlan() {
+    return hasSelectedBuildForCurrentPokemon() || hasPartnerBuildForCurrentPokemon();
+  }
+
   function configuredBuildForCurrentPokemon() {
-    if (!hasPartnerBuildForCurrentPokemon() || !state.selectedBuild
-      || normalize(state.selectedBuild.pokemon) !== normalize(state.pokemon)) return null;
-    const available = new Map(state.partnerBuild.moves.map((move) => [normalize(move.name), move.name]));
+    if (!hasSelectedBuildForCurrentPokemon()) return null;
+    const available = new Map(eligiblePartnerMoves().map((move) => [normalize(move.name), move.name]));
     const moves = [...new Set(state.selectedBuild.moves.map((name) => available.get(normalize(name))).filter(Boolean))].slice(0, MAX_MOVE_SLOTS);
     const firstPair = [...new Set(state.selectedBuild.firstPair.map((name) => available.get(normalize(name))).filter((name) => name && moves.some((item) => normalize(item) === normalize(name))))].slice(0, 2);
     return moves.length >= 2 && firstPair.length === 2 ? { moves, firstPair } : null;
   }
 
   function activeBuildMoves() {
-    if (!hasPartnerBuildForCurrentPokemon()) return [];
     const configured = configuredBuildForCurrentPokemon();
-    if (!configured) return state.partnerBuild.moves;
-    return configured.moves.map((name) => state.partnerBuild.moves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean);
+    if (configured) {
+      return configured.moves.map((name) => ({
+        ...(state.partnerBuild?.moves.find((move) => normalize(move.name) === normalize(name)) || {}),
+        ...getMoveData(name),
+        name
+      }));
+    }
+    return hasPartnerBuildForCurrentPokemon() ? state.partnerBuild.moves : [];
   }
 
   function activeBuildMoveNames() {
@@ -862,12 +887,14 @@
   function renderPartnerBuild() {
     ui.moveset.replaceChildren();
     const matchingBuild = hasPartnerBuildForCurrentPokemon();
-    ui.configureBuild.disabled = !matchingBuild;
+    const hasLearnableMoves = eligiblePartnerMoves().length > 0;
+    const hasPlan = hasAutoBuildPlan();
+    ui.configureBuild.disabled = !state.pokemon || !hasLearnableMoves;
     ui.configureBuild.textContent = configuredBuildForCurrentPokemon() ? "Chỉnh move set & Bond" : "Tự build move set";
-    ui.autoBuild.disabled = !matchingBuild;
-    ui.autoBuild.checked = Boolean(matchingBuild && state.autoBuildFromMoveset);
-    ui.autoBond.disabled = !matchingBuild;
-    ui.autoBond.checked = Boolean(matchingBuild && state.autoBondFromMoveset);
+    ui.autoBuild.disabled = !hasPlan;
+    ui.autoBuild.checked = Boolean(hasPlan && state.autoBuildFromMoveset);
+    ui.autoBond.disabled = !hasPlan;
+    ui.autoBond.checked = Boolean(hasPlan && state.autoBondFromMoveset);
     if (!state.pokemon) {
       ui.buildConfig.hidden = true;
       const message = document.createElement("p");
@@ -877,65 +904,63 @@
       ui.buildModeStatus.textContent = "Chưa chọn Partner.";
       return;
     }
-    if (!matchingBuild) {
-      ui.buildConfig.hidden = true;
-      const message = document.createElement("p");
-      message.className = "muted";
-      message.textContent = `Chưa có move set tải về cho ${state.pokemon}.`;
-      ui.moveset.append(message);
-      if (!ui.buildModeStatus.textContent.startsWith("Đang tải") && !ui.buildModeStatus.textContent.includes("Không tải")) {
-        ui.buildModeStatus.textContent = "Nhấn Tải gợi ý để tìm move set cho Partner.";
+    if (matchingBuild) {
+      const source = document.createElement("p");
+      source.className = "muted moveset-source";
+      source.textContent = "Build cộng đồng để tham khảo; bạn có thể tự tạo move set riêng bên dưới.";
+      ui.moveset.append(source);
+      for (const [index, move] of state.partnerBuild.moves.entries()) {
+        const row = document.createElement("div");
+        row.className = "build-item moveset-item";
+        const icon = createMoveIcon(getMoveData(move.name));
+        const name = document.createElement("span");
+        name.textContent = `${index + 1}. ${move.name}${move.role ? ` · ${move.role}` : ""}`;
+        const evo = document.createElement("span");
+        evo.className = "build-level";
+        evo.textContent = moveData.find((item) => normalize(item.name) === normalize(move.name))?.evoStat || "Move";
+        if (move.evolves) evo.title = move.evolves;
+        row.append(icon, name, evo);
+        ui.moveset.append(row);
       }
-      return;
+      const suggestedBond = getPartnerBuildBondPlan();
+      if (suggestedBond) {
+        const bond = document.createElement("p");
+        bond.className = "muted moveset-source";
+        bond.textContent = suggestedBond.names.length >= 4
+          ? `Lộ trình Bond: ${suggestedBond.firstPair.join(" + ")} → thêm ${suggestedBond.additions.join(" → thêm ")} (mỗi Bond sau thêm một move vào nhóm).`
+          : `Bond ưu tiên: ${suggestedBond.firstPair.join(" + ")} · ${suggestedBond.source === "user" ? "theo lựa chọn của bạn" : suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
+        ui.moveset.append(bond);
+      }
+      if (state.partnerBuild.cardPriority.length) {
+        const priority = document.createElement("p");
+        priority.className = "muted moveset-source";
+        priority.textContent = `Thẻ ưu tiên: ${state.partnerBuild.cardPriority.join(" → ")}`;
+        ui.moveset.append(priority);
+      }
+      if (state.partnerBuild.url) {
+        const link = document.createElement("a");
+        link.className = "build-source-link";
+        link.href = state.partnerBuild.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "Mở nguồn build";
+        ui.moveset.append(link);
+      }
+    } else {
+      const message = document.createElement("p");
+      message.className = "muted moveset-source";
+      message.textContent = hasLearnableMoves
+        ? `Chưa có build tham khảo cho ${state.pokemon}. Bạn vẫn có thể tự tạo move set từ danh sách move có thể học.`
+        : "Đang chờ dữ liệu move để tạo danh sách build riêng.";
+      ui.moveset.append(message);
     }
 
-    const source = document.createElement("p");
-    source.className = "muted moveset-source";
-    source.textContent = "Build cộng đồng theo luật game; bạn có thể chọn lại move và ưu tiên Bond.";
-    ui.moveset.append(source);
-    for (const [index, move] of state.partnerBuild.moves.entries()) {
-      const row = document.createElement("div");
-      row.className = "build-item moveset-item";
-      const icon = createMoveIcon(getMoveData(move.name));
-      const name = document.createElement("span");
-      name.textContent = `${index + 1}. ${move.name}${move.role ? ` · ${move.role}` : ""}`;
-      const evo = document.createElement("span");
-      evo.className = "build-level";
-      evo.textContent = moveData.find((item) => normalize(item.name) === normalize(move.name))?.evoStat || "Move";
-      if (move.evolves) evo.title = move.evolves;
-      row.append(icon, name, evo);
-      ui.moveset.append(row);
-    }
-    const suggestedBond = getPartnerBuildBondPlan();
-    if (suggestedBond) {
-      const bond = document.createElement("p");
-      bond.className = "muted moveset-source";
-      bond.textContent = suggestedBond.names.length >= 4
-        ? `Lộ trình Bond: ${suggestedBond.firstPair.join(" + ")} → thêm ${suggestedBond.additions.join(" → thêm ")} (mỗi Bond sau thêm một move vào nhóm).`
-        : `Bond ưu tiên: ${suggestedBond.firstPair.join(" + ")} · ${suggestedBond.source === "user" ? "theo lựa chọn của bạn" : suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
-      ui.moveset.append(bond);
-    }
     const configured = configuredBuildForCurrentPokemon();
     if (configured) {
       const selected = document.createElement("p");
       selected.className = "moveset-source selected-build-summary";
       selected.textContent = `Đang dùng: ${configured.moves.join(" → ")} · Bond đầu: ${configured.firstPair.join(" + ")}`;
       ui.moveset.append(selected);
-    }
-    if (state.partnerBuild.cardPriority.length) {
-      const priority = document.createElement("p");
-      priority.className = "muted moveset-source";
-      priority.textContent = `Thẻ ưu tiên: ${state.partnerBuild.cardPriority.join(" → ")}`;
-      ui.moveset.append(priority);
-    }
-    if (state.partnerBuild.url) {
-      const link = document.createElement("a");
-      link.className = "build-source-link";
-      link.href = state.partnerBuild.url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "Mở nguồn build";
-      ui.moveset.append(link);
     }
     ui.buildModeStatus.textContent = state.autoBuildFromMoveset
       ? configuredBuildForCurrentPokemon()
@@ -1022,13 +1047,21 @@
   }
 
   function openBuildConfigurator() {
-    if (!hasPartnerBuildForCurrentPokemon()) return;
+    const eligibleMoves = eligiblePartnerMoves();
+    if (!eligibleMoves.length) return;
     const configured = configuredBuildForCurrentPokemon();
-    const defaultPlan = getPartnerBuildBondPlan();
+    const availableByName = new Map(eligibleMoves.map((move) => [normalize(move.name), move.name]));
+    const startingMoves = partnerStartingMoves(currentPokemon())
+      .map((move) => availableByName.get(normalize(move.name)))
+      .filter(Boolean)
+      .slice(0, MAX_MOVE_SLOTS);
+    const defaultMoves = configured ? [...configured.moves] : startingMoves;
     buildConfigDraft = {
       pokemon: state.pokemon,
-      moves: configured ? [...configured.moves] : state.partnerBuild.moves.map((move) => move.name).slice(0, MAX_MOVE_SLOTS),
-      firstPair: configured ? [...configured.firstPair] : [...(defaultPlan?.firstPair || [])]
+      moves: defaultMoves,
+      firstPair: configured
+        ? [...configured.firstPair]
+        : startingMoves.length >= 2 ? startingMoves.slice(0, 2) : []
     };
     buildConfigFeedback = "";
     ui.buildConfig.hidden = false;
@@ -1042,12 +1075,14 @@
   }
 
   function renderBuildConfigurator() {
-    if (!buildConfigDraft || !hasPartnerBuildForCurrentPokemon()) return;
+    if (!buildConfigDraft || normalize(buildConfigDraft.pokemon) !== normalize(state.pokemon)) return;
     ui.buildConfigMoves.replaceChildren();
     const selectedNames = buildConfigDraft.moves;
+    const availableMoves = eligiblePartnerMoves();
+    const startingNames = new Set(partnerStartingMoves(currentPokemon()).map((move) => normalize(move.name)));
     const orderedRows = [
-      ...selectedNames.map((name) => state.partnerBuild.moves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean),
-      ...state.partnerBuild.moves.filter((move) => !selectedNames.some((name) => normalize(name) === normalize(move.name)))
+      ...selectedNames.map((name) => availableMoves.find((move) => normalize(move.name) === normalize(name))).filter(Boolean),
+      ...availableMoves.filter((move) => !selectedNames.some((name) => normalize(name) === normalize(move.name)))
     ];
     for (const move of orderedRows) {
       const selectedIndex = selectedNames.findIndex((name) => normalize(name) === normalize(move.name));
@@ -1062,9 +1097,11 @@
       const title = document.createElement("strong");
       title.textContent = `${selected ? `${selectedIndex + 1}. ` : ""}${move.name}`;
       const meta = document.createElement("small");
-      const data = getMoveData(move.name);
-      meta.textContent = [data?.type, data?.category, move.role].filter(Boolean).join(" · ") || "Move";
-      details.append(title, meta);
+      meta.textContent = [move.type, move.category, move.kind, startingNames.has(normalize(move.name)) ? "Mở đầu" : ""].filter(Boolean).join(" · ");
+      const description = document.createElement("small");
+      description.className = "build-config-description";
+      description.textContent = move.description || "Chưa có mô tả move.";
+      details.append(title, meta, description);
 
       const controls = document.createElement("div");
       controls.className = "build-config-controls";
@@ -1075,7 +1112,7 @@
       include.dataset.role = "include";
       include.checked = selected;
       include.setAttribute("aria-label", `Dùng ${move.name} trong move set`);
-      includeLabel.append(include, document.createTextNode("Dùng"));
+      includeLabel.append(include, document.createTextNode(selected ? "Đã thêm" : "+ Thêm"));
       const bondLabel = document.createElement("label");
       bondLabel.className = "config-choice bond-choice";
       const bond = document.createElement("input");
@@ -1175,8 +1212,10 @@
       moves: [...buildConfigDraft.moves],
       firstPair: [...buildConfigDraft.firstPair]
     };
+    state.autoPick = true;
     state.autoBuildFromMoveset = true;
     state.autoBondFromMoveset = true;
+    ui.autoPick.checked = true;
     ui.autoBuild.checked = true;
     ui.autoBond.checked = true;
     closeBuildConfigurator();
@@ -1184,7 +1223,7 @@
     renderPartnerBuild();
     refreshRecommendations();
     updateBondState();
-    ui.buildModeStatus.textContent = "Đã xác nhận: tự build theo move đã chọn và ưu tiên Bond theo cặp cùng thứ tự đã đặt.";
+    ui.buildModeStatus.textContent = "Đã xác nhận: tự chọn thẻ, build theo move đã chọn và ưu tiên Bond theo cặp cùng thứ tự đã đặt.";
   }
 
   function renderTypes() {
@@ -1449,7 +1488,7 @@
 
   function activeMovePriorityNames() {
     const names = [];
-    if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
+    if (state.autoBuildFromMoveset && hasAutoBuildPlan()) {
       names.push(...activeBuildMoveNames());
     }
     names.push(...state.targets);
@@ -1511,7 +1550,7 @@
         score += 38;
         reasons.push("đúng skill mục tiêu");
       }
-      if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon()) {
+      if (state.autoBuildFromMoveset && hasAutoBuildPlan()) {
         const moveSetIndex = activeBuildMoves().findIndex((item) => normalize(item.name) === normalize(move.name));
         if (moveSetIndex >= 0) {
           score += Math.max(20, 36 - moveSetIndex * 4);
@@ -1705,7 +1744,7 @@
     const best = candidates[0];
     if (!best) return "";
     if (best.score <= AUTO_PICK_MIN_SCORE) return `điểm cao nhất chỉ ${best.score}, dưới ngưỡng 7`;
-    if (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon() && unfinishedBuildMoveNames().length
+    if (state.autoBuildFromMoveset && hasAutoBuildPlan() && unfinishedBuildMoveNames().length
       && !candidates.some(candidateMatchesActiveMoveSet)) {
       return "cả ba thẻ đều không khớp move set Partner";
     }
@@ -1917,7 +1956,6 @@
   }
 
   function getPartnerBuildBondPlan() {
-    if (!hasPartnerBuildForCurrentPokemon()) return null;
     const configured = configuredBuildForCurrentPokemon();
     if (configured) {
       const names = [
@@ -1934,6 +1972,7 @@
         reasons: ["theo move set và cặp Bond do người chơi xác nhận", ...groupScore.reasons].slice(0, 4)
       };
     }
+    if (!hasPartnerBuildForCurrentPokemon()) return null;
     const moves = state.partnerBuild.moves
       .map((item, index) => ({ move: getMoveData(item.name), index }))
       .filter((item) => item.move)
@@ -2242,7 +2281,7 @@
       bondWatchdogTimer = null;
     }
     if (bondPendingSecondMove || bondManualOverride) return;
-    if (!state.autoBondFromMoveset || !hasPartnerBuildForCurrentPokemon()) {
+    if (!state.autoBondFromMoveset || !hasAutoBuildPlan()) {
       if (phase === "unknown") ui.bondStatus.textContent = "Đã nhận màn Bond; chưa xác định được bước chọn từ nội dung game.";
       else if (!state.autoBondFromMoveset) ui.bondStatus.textContent = "Đã nhận màn Bond; tự chọn đang tắt.";
       return;
@@ -2489,7 +2528,7 @@
     }
 
     for (const learned of state.learnedMoves) appendMove(learned.name, Number(learned.level) || 1);
-    if (!entries.length || (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon())) {
+    if (!entries.length || (state.autoBuildFromMoveset && hasAutoBuildPlan())) {
       for (const planned of activeBuildMoves()) appendMove(planned.name, 1);
     }
     for (const group of actualBondGroups) {
@@ -2523,7 +2562,7 @@
     const bondNames = [...new Set(bondGroups.flat())];
 
     return {
-      source: state.learnedMoves.length ? "skill đã học" : hasPartnerBuildForCurrentPokemon() ? "move set Partner" : "hướng build",
+      source: state.learnedMoves.length ? "skill đã học" : hasAutoBuildPlan() ? "move set Partner" : "hướng build",
       moves: profiles,
       attacks,
       areaAttacks: attacks.filter((entry) => entry.profile.area).length,
@@ -3091,13 +3130,14 @@
     .build-config[hidden] { display: none !important; }
     .build-config { display: grid; gap: 7px; margin: 7px 0; padding: 8px; border: 1px solid #596c8d; border-radius: 10px; background: #111d31; }
     .build-config > .muted { margin: 0; line-height: 1.4; }
-    .build-config-moves { display: grid; gap: 5px; }
+    .build-config-moves { display: grid; gap: 5px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
     .build-config-move { display: grid; grid-template-columns: 34px minmax(0, 1fr) 77px 42px; align-items: center; gap: 5px; min-height: 47px; padding: 5px; border: 1px solid #344662; border-radius: 8px; background: #17253c; }
     .build-config-move.selected { border-color: #ad8d50; background: #222b36; }
     .move-icon { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
     .build-config-details { display: grid; gap: 2px; min-width: 0; }
     .build-config-details strong { overflow-wrap: anywhere; font-size: 10px; line-height: 1.2; }
     .build-config-details small { color: #98a9c3; font-size: 8px; line-height: 1.2; }
+    .build-config-details .build-config-description { overflow-wrap: anywhere; color: #d1dced; font-size: 9px; line-height: 1.3; }
     .build-config-controls { display: grid; gap: 3px; }
     label.config-choice { display: flex; justify-content: flex-start; gap: 4px; margin: 0; color: #bccbe0; font-size: 8px; line-height: 1.1; cursor: pointer; }
     label.config-choice input { width: 12px; height: 12px; flex: 0 0 12px; margin: 0; padding: 0; accent-color: #f5c76b; }
