@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.8
+# PokéSurvivor Build Assistant 0.3.9
 
 Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và ghép Bond theo build. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải ZIP v0.3.8 và giải nén.
+1. Tải ZIP v0.3.9 và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -20,6 +20,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Gợi ý và tự chọn item:** xếp hạng hai item theo tác dụng, Partner, các move đã học hoặc move set đang theo và hướng build. Ưu tiên sát thương, hồi phục, giảm hồi chiêu, EXP, cơ động hoặc chống chịu theo tình huống; tự chọn item bật mặc định và có thể tắt riêng. Item lạ chưa nhận diện sẽ làm extension dừng click để tránh chọn đoán.
 - **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ không nhận diện được nhận điểm dự phòng; nếu cả ba lựa chọn đều không có dữ liệu, thứ tự game là tiêu chí cuối.
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
+- **Nạp move mở màn của Partner:** khi thẻ lên cấp xuất hiện, extension đọc move mở màn đã chọn trong dữ liệu game lưu trên trình duyệt, bao gồm move thứ hai đã chọn nếu đã mở khóa. Nếu không đọc được bản lưu, extension dùng move mở màn mặc định theo Pokémon. Move được đánh dấu **Mở màn** và tham gia chấm điểm nâng cấp, gợi ý phối hợp và Bond.
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và gợi ý cặp Bond theo các move đã học.
 - **Gợi ý Bond theo Partner:** hiển thị cặp ghép được hướng dẫn trong build cộng đồng; nếu trang không nêu cặp Bond, xếp cặp ưu tiên từ move set theo độ phối hợp và thứ tự move.
@@ -30,10 +31,11 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 
 1. Đồng bộ Partner hoặc chọn Pokémon trong bảng extension.
 2. Chờ move set tải tự động; nếu chưa có, nhấn **Tải gợi ý**.
-3. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
-4. Khi lên cấp, extension dùng điểm để chọn; nếu các lựa chọn gần nhau trong 6 điểm, nó ưu tiên move đầu tiên còn xuất hiện trong thứ tự move set.
-5. Bật **Tự chọn Bond theo move set** riêng nếu muốn extension tự bấm hai move trong hộp thoại Bond.
-6. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
+3. Khi lần đầu hiện thẻ lên cấp, kiểm tra move mở màn đã được nạp và đánh dấu **Mở màn** trong danh sách skill.
+4. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
+5. Khi lên cấp, extension dùng điểm để chọn; nếu các lựa chọn gần nhau trong 6 điểm, nó ưu tiên move đầu tiên còn xuất hiện trong thứ tự move set.
+6. Bật **Tự chọn Bond theo move set** riêng nếu muốn extension tự bấm hai move trong hộp thoại Bond.
+7. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
 
 Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được thêm trước sẽ có ưu tiên trước trong trường hợp gần điểm bằng nhau. Tắt **Tự build theo move set** nếu chỉ muốn xem gợi ý; tắt **Tự chọn thẻ** để không tự bấm.
 
@@ -49,7 +51,7 @@ Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được t
 
 ## Quyền riêng tư
 
-Extension lưu tùy chọn Pokémon, hướng build, move set đang dùng và dữ liệu tham khảo trong `chrome.storage.local`. Để tải build Partner, tên Pokémon được dùng để mở đúng trang build công khai trên `pokesurvivors.org`. Extension không gửi dữ liệu lượt chơi lên dịch vụ này.
+Extension lưu tùy chọn Pokémon, hướng build, move set đang dùng và dữ liệu tham khảo trong `chrome.storage.local`. Để đọc move mở màn, extension chỉ đọc các trường move của Partner hiện tại trong bản lưu game có sẵn trên pokesurvivor.com; dữ liệu này không được gửi ra ngoài. Để tải build Partner, tên Pokémon được dùng để mở đúng trang build công khai trên `pokesurvivors.org`. Extension không gửi dữ liệu lượt chơi lên dịch vụ này.
 
 ## Bản quyền
 

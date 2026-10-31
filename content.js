@@ -12,6 +12,38 @@
   const AUTO_BOND_DELAY_MS = 500;
   const AUTO_ITEM_DELAY_MS = 600;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
+  const START_MOVE_BY_TYPE = {
+    fire: "ember",
+    water: "water-gun",
+    grass: "vine-whip",
+    electric: "thunder-shock",
+    psychic: "confusion",
+    poison: "sludge",
+    ground: "mud-shot",
+    flying: "gust",
+    bug: "bug-bite",
+    rock: "rock-throw",
+    ice: "ice-beam",
+    fighting: "karate-chop",
+    ghost: "shadow-ball",
+    dragon: "dragon-rage",
+    fairy: "fairy-wind",
+    steel: "metal-claw",
+    dark: "bite",
+    normal: "tackle"
+  };
+  const START_MOVE_BY_DEX = {
+    1: "vine-whip", 4: "ember", 7: "water-gun",
+    54: "confusion", 79: "confusion",
+    152: "vine-whip", 155: "ember", 158: "water-gun",
+    252: "razor-leaf", 255: "ember", 258: "water-gun",
+    387: "vine-whip", 390: "ember", 393: "bubble",
+    495: "razor-leaf", 498: "ember", 501: "water-gun",
+    650: "vine-whip", 653: "ember", 656: "water-gun",
+    722: "razor-leaf", 725: "ember", 728: "bubble",
+    810: "vine-whip", 813: "ember", 816: "water-gun",
+    906: "razor-leaf", 909: "ember", 912: "water-gun"
+  };
   const STRATEGIES = {
     balanced: "Cân bằng",
     evolve: "Ưu tiên tiến hóa",
@@ -345,7 +377,15 @@
                 : []
             }
           : null;
-        state.learnedMoves = Array.isArray(value.learnedMoves) ? value.learnedMoves.filter((item) => item && typeof item.name === "string").slice(0, MAX_MOVES_WITH_BONDS) : [];
+        state.learnedMoves = Array.isArray(value.learnedMoves)
+          ? value.learnedMoves.filter((item) => item && typeof item.name === "string").slice(0, MAX_MOVES_WITH_BONDS).map((item) => ({
+              name: item.name,
+              level: Math.max(1, Math.min(5, Number(item.level) || 1)),
+              evolved: Boolean(item.evolved),
+              origin: item.origin === "starting" ? "starting" : "",
+              startSource: item.origin === "starting" && item.startSource === "saved" ? "saved" : "default"
+            }))
+          : [];
         state.fusedGroups = Array.isArray(value.fusedGroups)
           ? value.fusedGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, MAX_MOVE_SLOTS)
           : [];
@@ -379,6 +419,7 @@
       populateLists();
       syncUiFromState();
       observePartnerName();
+      updateLevelUpState();
       loadPartnerMovesetIfNeeded();
       ui.status.textContent = `Đã nạp ${pokemonData.length} Pokémon và ${moveData.length} move từ trang chính thức.`;
       refreshRecommendations();
@@ -452,6 +493,94 @@
   function currentPokemon() {
     const key = normalize(state.pokemon);
     return pokemonData.find((pokemon) => normalize(pokemon.name) === key) || null;
+  }
+
+  function moveNameFromId(id) {
+    const key = normalize(String(id || "").replace(/[-_]+/g, " "));
+    return moveData.find((move) => normalize(move.name) === key)?.name || "";
+  }
+
+  function parseGameSave(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const save = JSON.parse(raw);
+      return save && typeof save === "object" ? save : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function gameSaveForPartner(pokemon) {
+    if (!pokemon?.id) return null;
+    const partnerId = Number(pokemon.id);
+    const activeName = normalize(document.querySelector("#user-pill span[translate='no']")?.textContent);
+    const candidates = [];
+    try {
+      const sessionKey = localStorage.getItem("ps.session");
+      if (sessionKey) {
+        const localSave = parseGameSave(`ps.save.${sessionKey}`);
+        if (Number(localSave?.partner) === partnerId) candidates.push(localSave);
+      }
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith("ps.cloud.")) continue;
+        const cloudSave = parseGameSave(key);
+        if (Number(cloudSave?.partner) === partnerId) candidates.push(cloudSave);
+      }
+    } catch (_error) {
+      return null;
+    }
+    if (activeName) {
+      return candidates
+        .filter((save) => normalize(save.name) === activeName)
+        .sort((a, b) => Number(b.updated) - Number(a.updated))[0] || null;
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function partnerStartingMoves(pokemon) {
+    if (!pokemon) return [];
+    const dex = Number(pokemon.id);
+    const gameSave = gameSaveForPartner(pokemon);
+    const upgrade = gameSave?.pupg?.[dex] || {};
+    const selectedStart = gameSave?.pstart?.[dex];
+    const baseStart = START_MOVE_BY_DEX[dex] || START_MOVE_BY_TYPE[normalize(pokemon.types?.[0])]
+      || START_MOVE_BY_TYPE.normal;
+    const startId = upgrade.start && selectedStart && moveNameFromId(selectedStart)
+      ? selectedStart
+      : baseStart;
+    const moves = [{ id: startId, source: upgrade.start && selectedStart === startId ? "saved" : "default" }];
+
+    const selectedSecond = gameSave?.pstart2?.[dex];
+    if (upgrade.start2 && upgrade.moves && selectedSecond && selectedSecond !== startId && moveNameFromId(selectedSecond)) {
+      moves.push({ id: selectedSecond, source: "saved" });
+    }
+    return moves
+      .map((item) => ({ name: moveNameFromId(item.id), source: item.source }))
+      .filter((item) => item.name)
+      .slice(0, MAX_MOVE_SLOTS);
+  }
+
+  function ensurePartnerStartingMoves() {
+    if (state.learnedMoves.some((move) => move.origin === "starting")) return false;
+    const starts = partnerStartingMoves(currentPokemon());
+    if (!starts.length) return false;
+    const names = starts.map((move) => normalize(move.name));
+    const existingStarts = state.learnedMoves.filter((move) => move.origin === "starting").map((move) => normalize(move.name));
+    if (names.length === existingStarts.length && names.every((name, index) => name === existingStarts[index])) return false;
+
+    const remaining = state.learnedMoves.filter((move) => !names.includes(normalize(move.name)) && move.origin !== "starting");
+    const startingMoves = starts.map((move) => {
+      const existing = state.learnedMoves.find((item) => normalize(item.name) === normalize(move.name));
+      return existing
+        ? { ...existing, origin: "starting", startSource: move.source }
+        : { name: move.name, level: 1, evolved: false, origin: "starting", startSource: move.source };
+    });
+    state.learnedMoves = [...startingMoves, ...remaining].slice(0, MAX_MOVES_WITH_BONDS);
+    persistState();
+    renderBuild();
+    return true;
   }
 
   function hasPartnerBuildForCurrentPokemon() {
@@ -837,6 +966,7 @@
     if (visible) {
       const level = Number(document.querySelector("#lvl-num")?.textContent?.trim());
       if (level > 0 && state.lastLevel > 2 && level <= 2) clearRunTracker();
+      ensurePartnerStartingMoves();
       if (level > 0 && level !== state.lastLevel) {
         state.lastLevel = level;
         persistState();
@@ -2072,7 +2202,14 @@
       name.textContent = move.name;
       const level = document.createElement("span");
       level.className = "build-level";
-      level.textContent = move.evolved ? "Đã tiến hóa" : `Lv ${move.level || 1}/5`;
+      level.textContent = move.origin === "starting"
+        ? `Mở màn · Lv ${move.level || 1}/5`
+        : move.evolved ? "Đã tiến hóa" : `Lv ${move.level || 1}/5`;
+      if (move.origin === "starting") {
+        level.title = move.startSource === "saved"
+          ? "Move mở màn lấy từ cài đặt Partner đã lưu trong game."
+          : "Move mở màn mặc định theo loài Pokémon trong game.";
+      }
       row.append(name, level);
       ui.build.append(row);
     }
