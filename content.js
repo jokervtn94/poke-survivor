@@ -1685,7 +1685,20 @@
   }
 
   function bondCandidates() {
-    return bondCardNodes().map(candidateFromCard).filter((candidate) => candidate.move);
+    const promptGroup = new Set(bondPromptMoveNames().map(normalize));
+    return bondCardNodes().map((card) => {
+      const candidate = candidateFromCard(card);
+      let names = candidateMoveNames(candidate);
+      if (bondPhase() === "second" && promptGroup.size) {
+        // Bond option descriptions repeat the move/group named in the prompt,
+        // e.g. “Hyper Voice … fires with Shadow Ball + Hex”. On this screen the
+        // card itself is one loose move; ignore those descriptive references.
+        const additions = names.filter((name) => !promptGroup.has(normalize(name)));
+        if (additions.length) names = [additions[0]];
+      }
+      const moves = names.map(getMoveData).filter(Boolean);
+      return { ...candidate, move: moves[0] || null, moves };
+    }).filter((candidate) => candidate.move);
   }
 
   function candidateMoveNames(candidate) {
@@ -1810,36 +1823,39 @@
     const selectedNames = Array.isArray(firstNames) ? firstNames : [firstNames];
     const normalizedFirst = new Set(selectedNames.map(normalize));
     const plan = getPartnerBuildBondPlan();
-    const preferredNext = plan?.names.find((name) => !normalizedFirst.has(normalize(name)));
+    const plannedNextMoves = (plan?.names || []).filter((name) => !normalizedFirst.has(normalize(name)));
+    const availableSingles = candidates
+      .map((candidate) => ({ candidate, names: candidateMoveNames(candidate) }))
+      .filter(({ names }) => names.length === 1 && !normalizedFirst.has(normalize(names[0])));
+
+    // Honor the build sequence exactly when a planned move is on the current
+    // Bond screen. If it is not offered, try the next planned move in order.
+    for (const plannedName of plannedNextMoves) {
+      const planned = availableSingles.find(({ names }) => normalize(names[0]) === normalize(plannedName));
+      if (planned) return planned.candidate;
+    }
+
+    // No planned move is available: choose the strongest legal option among
+    // the cards the game actually shows. A single offered card is still valid.
+    if (!availableSingles.length) return null;
+    const baseScore = fusionGroupScore(selectedNames.map(getMoveData).filter(Boolean)).score;
     const explicitPairs = state.partnerBuild?.bondGroups || [];
-    const ranked = candidates
-      .map((candidate) => {
-        const names = candidateMoveNames(candidate);
-        // Every second choice is one loose move: either it completes a new
-        // pair or adds exactly one move to the existing Bond group.
-        if (names.length !== 1 || names.some((name) => normalizedFirst.has(normalize(name)))) return null;
-        const mergedNames = [...selectedNames, ...names].filter((name, index, list) =>
-          list.findIndex((item) => normalize(item) === normalize(name)) === index
-        );
+    const ranked = availableSingles
+      .map(({ candidate, names }) => {
+        const mergedNames = [...selectedNames, ...names];
         if (mergedNames.length > MAX_BOND_GROUP_SIZE) return null;
         const groupScore = fusionGroupScore(mergedNames.map(getMoveData).filter(Boolean)).score;
-        const priority = names.reduce((sum, name) => {
-          const index = plan?.names.findIndex((item) => normalize(item) === normalize(name)) ?? -1;
-          return sum + (index < 0 ? bondPriority(name) : Math.max(1, MAX_MOVE_SLOTS - index) * 8);
-        }, 0);
-        const offPlanPenalty = plan ? names.filter((name) => !plan.names.some((item) => normalize(item) === normalize(name))).length * 24 : 0;
+        const priority = names.reduce((sum, name) => sum + bondPriority(name), 0);
         const explicitBonus = explicitPairs.some((group) =>
           selectedNames.some((name) => group.some((item) => normalize(item) === normalize(name)))
           && names.some((name) => group.some((item) => normalize(item) === normalize(name)))
         ) ? 60 : 0;
-        const nextBonus = preferredNext && names.some((name) => normalize(name) === normalize(preferredNext)) ? 80 : 0;
-        return { candidate, names, score: groupScore + priority + explicitBonus + nextBonus - offPlanPenalty };
+        return { candidate, names, score: groupScore - baseScore + priority + explicitBonus };
       })
       .filter(Boolean)
       .sort((a, b) => b.score - a.score);
 
-    if (!ranked.length) return null;
-    return ranked[0].candidate;
+    return ranked[0]?.candidate || null;
   }
 
   function bondSelectionSignature(phase, candidates) {
@@ -1949,11 +1965,19 @@
     }
     const candidate = chooseBondPartner(bondPendingFirstGroup, candidates);
     if (!candidate) {
-      ui.bondStatus.textContent = `Không tìm thấy move ghép phù hợp với ${bondPendingFirstMove}.`;
+      const plannedNext = getPartnerBuildBondPlan()?.names.find((name) => !bondPendingFirstGroup.some((item) => normalize(item) === normalize(name)));
+      ui.bondStatus.textContent = plannedNext
+        ? `Chưa nhận diện được move hợp lệ trên màn Bond; move ưu tiên ${plannedNext} hiện không có trong lựa chọn.`
+        : `Chưa nhận diện được move lẻ hợp lệ để ghép với ${bondPendingFirstMove}.`;
       return;
     }
     const signature = bondSelectionSignature(phase, candidates);
-    queueBondChoice(candidate, phase, signature, `ghép với ${bondPendingFirstMove}`);
+    const selectedNames = candidateMoveNames(candidate);
+    const plannedNext = getPartnerBuildBondPlan()?.names.find((name) => !bondPendingFirstGroup.some((item) => normalize(item) === normalize(name)));
+    const followsBuild = plannedNext && selectedNames.some((name) => normalize(name) === normalize(plannedNext));
+    queueBondChoice(candidate, phase, signature, followsBuild
+      ? `ưu tiên ${plannedNext} trong build; ghép với ${bondPendingFirstMove}`
+      : `phương án dự phòng tốt nhất đang hiện; ghép với ${bondPendingFirstMove}`);
   }
 
   function queueBondChoice(candidate, phase, signature, reason) {
@@ -2051,7 +2075,7 @@
     if (!event.isTrusted) return;
     const target = event.target instanceof Element ? event.target : null;
     const card = target?.closest("#bond-cards .card") || target?.closest('#bond-cards button, #bond-cards [role="button"]') || target?.closest("#bond-cards > *");
-    if (card) recordManualBondChoice(candidateFromCard(card));
+    if (card) recordManualBondChoice(bondCandidates().find((candidate) => candidate.element === card) || candidateFromCard(card));
   }
 
   function clearBondTracking() {
