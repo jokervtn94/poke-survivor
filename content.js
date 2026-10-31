@@ -3175,7 +3175,8 @@
     .build-config-moves { display: grid; flex: 1 1 auto; min-height: 0; gap: 7px; overflow-y: auto; padding: 2px 5px 2px 0; scrollbar-gutter: stable; }
     .build-config-move { display: grid; grid-template-columns: 42px minmax(0, 1fr) 92px 44px; align-items: center; gap: 10px; min-height: 82px; padding: 9px 10px; border: 1px solid #344662; border-radius: 10px; background: #17253c; }
     .build-config-move.selected { border-color: #ad8d50; background: #222b36; }
-    .build-config-move .move-icon { width: 40px; height: 40px; flex: 0 0 auto; image-rendering: pixelated; }
+    .move-icon { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
+    .build-config-move .move-icon { width: 40px; height: 40px; }
     .build-config-details { display: grid; gap: 2px; min-width: 0; }
     .build-config-details strong { overflow-wrap: anywhere; font-size: 13px; line-height: 1.2; }
     .build-config-details small { color: #98a9c3; font-size: 10px; line-height: 1.25; }
