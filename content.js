@@ -169,9 +169,9 @@
         <p id="psba-auto-status" class="muted auto-status">Reroll khi điểm cao nhất dưới 7 hoặc không có thẻ theo move set; sau đó tự chọn thẻ tốt nhất còn lại.</p>
 
         <div class="section-title"><span>Item phù hợp cho lượt này</span><small id="psba-item-label">chờ item</small></div>
-        <div id="psba-item-recommendations" class="recommendations"><p class="muted">Khi item xuất hiện, extension sẽ xếp hạng theo Partner và move set.</p></div>
+        <div id="psba-item-recommendations" class="recommendations"><p class="muted">Khi item xuất hiện, extension sẽ xếp hạng theo Partner, move set và Bond.</p></div>
         <label class="auto-pick-row"><span><input id="psba-auto-items" type="checkbox"> Tự chọn item</span></label>
-        <p id="psba-item-status" class="muted auto-status">Đang ưu tiên hiệu quả cho Partner/build hiện tại.</p>
+        <p id="psba-item-status" class="muted auto-status">Đang ưu tiên hiệu quả cho Partner, move set và Bond hiện tại.</p>
 
         <div class="section-title"><span>Skill đã học trong lượt</span><button id="psba-reset" class="text-button" type="button">Xóa lượt</button></div>
         <div id="psba-build" class="build-list"><p class="muted">Chưa ghi nhận lựa chọn nào.</p></div>
@@ -257,7 +257,7 @@
     itemManualOverride = false;
     persistState();
     ui.itemStatus.textContent = state.autoPickItems
-      ? "Đang tự chọn item theo hiệu quả ước tính cho Partner/build."
+      ? "Đang tự chọn item theo hiệu quả ước tính cho Partner, move set và Bond."
       : "Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.";
     updateItemState();
   });
@@ -2132,10 +2132,44 @@
       if (!move || entries.some((entry) => normalize(entry.move.name) === normalize(move.name))) return;
       entries.push({ move, level });
     };
+
+    const actualBondGroups = state.fusedGroups
+      .map((group) => [...new Set(group.map((name) => getMoveData(name)?.name).filter(Boolean))])
+      .filter((group) => group.length >= 2);
+    const plannedBond = state.autoBondFromMoveset ? getPartnerBuildBondPlan() : null;
+    const bondGroups = [...actualBondGroups];
+    let bondProjected = false;
+    if (plannedBond?.names?.length >= 2) {
+      if (!bondGroups.length) {
+        bondGroups.push(plannedBond.names);
+        bondProjected = true;
+      } else {
+        const matchingGroup = bondGroups.findIndex((group) => group.some((name) =>
+          plannedBond.names.some((planned) => normalize(planned) === normalize(name))
+        ));
+        if (matchingGroup >= 0) {
+          const current = bondGroups[matchingGroup];
+          const projected = [...new Set([...plannedBond.names, ...current].map((name) => getMoveData(name)?.name || name))]
+            .slice(0, MAX_BOND_GROUP_SIZE);
+          if (projected.length > current.length) {
+            bondGroups[matchingGroup] = projected;
+            bondProjected = true;
+          }
+        }
+      }
+    }
+
     for (const learned of state.learnedMoves) appendMove(learned.name, Number(learned.level) || 1);
     if (!entries.length || (state.autoBuildFromMoveset && hasPartnerBuildForCurrentPokemon())) {
       for (const planned of state.partnerBuild?.moves || []) appendMove(planned.name, 1);
     }
+    for (const group of actualBondGroups) {
+      for (const name of group) appendMove(name, 1);
+    }
+    if (plannedBond) {
+      for (const name of plannedBond.names) appendMove(name, 1);
+    }
+
     const profiles = entries.map(({ move, level }) => ({
       move,
       level,
@@ -2143,16 +2177,43 @@
       rapid: /several times|multiple times|many times|repeatedly|rapidly|spin in place|hits everything/.test(normalize(move.description))
     }));
     const attacks = profiles.filter((entry) => !entry.profile.isBuff && !entry.profile.control);
+    const groupedNames = new Set(bondGroups.flat().map(normalize));
+    const bondProfiles = bondGroups.map((group) => ({
+      names: group,
+      profiles: group.map((name) => profiles.find((entry) => normalize(entry.move.name) === normalize(name))).filter(Boolean)
+    }));
+    const bondDamageProfiles = bondProfiles.flatMap((group) => group.profiles.filter((entry) => !entry.profile.isBuff));
+    const bondAttackSlotCount = bondProfiles.filter((group) => group.profiles.some((entry) => !entry.profile.isBuff)).length;
+    const looseAttackSlotCount = attacks.filter((entry) => !groupedNames.has(normalize(entry.move.name))).length;
+    const bondHasHexTrigger = bondProfiles.some((group) =>
+      group.profiles.some((entry) => normalize(entry.move.name) === "hex")
+      && group.profiles.some((entry) => normalize(entry.move.name) !== "hex"
+        && entry.profile.statuses.some((status) => ["burn", "poison", "slow"].includes(status)))
+    );
+    const hasActualBond = actualBondGroups.length > 0;
+    const bondNames = [...new Set(bondGroups.flat())];
+
     return {
       source: state.learnedMoves.length ? "skill đã học" : hasPartnerBuildForCurrentPokemon() ? "move set Partner" : "hướng build",
       moves: profiles,
       attacks,
       areaAttacks: attacks.filter((entry) => entry.profile.area).length,
-      rapidAttacks: attacks.filter((entry) => entry.rapid).length,
+      rapidAttacks: profiles.filter((entry) => entry.rapid).length,
       hasSustain: profiles.some((entry) => entry.profile.sustain),
       topLevel: Math.max(0, ...profiles.map((entry) => entry.level)),
       armorPicks: state.statPicks.filter((item) => ["armor", "vigor", "synthesis"].includes(normalize(item))).length,
-      sprintPicks: state.statPicks.filter((item) => normalize(item) === "sprint").length
+      sprintPicks: state.statPicks.filter((item) => normalize(item) === "sprint").length,
+      attackSlotCount: bondAttackSlotCount + looseAttackSlotCount,
+      bondAttackSlotCount,
+      bondDamageCount: bondDamageProfiles.length,
+      bondRapidCount: bondDamageProfiles.filter((entry) => entry.rapid).length,
+      bondHasHexTrigger,
+      hasActualBond,
+      bondProjected,
+      bondConfidence: hasActualBond ? bondProjected ? 0.75 : 1 : plannedBond ? 0.45 : 0,
+      bondContextLabel: bondNames.length
+        ? `${hasActualBond ? bondProjected ? "Bond hiện tại + build dự kiến" : "Bond đang dùng" : "Bond dự kiến"}: ${bondNames.join(" + ")}`
+        : ""
     };
   }
 
@@ -2165,11 +2226,21 @@
       if (reason) score.reasons.push(reason);
     };
     const attackCount = facts.attacks.length;
+    const attackSlotCount = Number.isFinite(facts.attackSlotCount) ? facts.attackSlotCount : attackCount;
+    const bondConfidence = Number(facts.bondConfidence) || 0;
+    const bondSourceLabel = facts.hasActualBond
+      ? facts.bondProjected ? "Bond hiện tại + build dự kiến" : "Bond hiện tại"
+      : "Bond dự kiến";
     const strategyIsSurvival = state.strategy === "survival";
     switch (item.id) {
       case "quick-claw":
         add(15 + Math.min(6, attackCount * 2), "giảm hồi chiêu cho toàn bộ move đang dùng");
         if (facts.rapidAttacks) add(Math.min(4, facts.rapidAttacks * 2), "hợp build có đòn đánh lặp/đánh nhiều lần");
+        if (facts.bondDamageCount >= 2) {
+          const bonus = Math.round(Math.min(9, (facts.bondDamageCount - 1) * 3) * bondConfidence);
+          add(bonus, `${bondSourceLabel} gom ${facts.bondDamageCount} đòn; giảm hồi chiêu hỗ trợ nhóm cùng kích hoạt`);
+        }
+        if (facts.bondHasHexTrigger) add(Math.round(4 * bondConfidence), "giảm hồi chiêu giúp nhóm Hex và move gây trạng thái có thêm lượt phối hợp");
         break;
       case "lucky-egg":
         add(12, "tăng EXP để lên cấp và hoàn thiện build sớm hơn");
@@ -2178,24 +2249,40 @@
         break;
       case "shell-bell":
         add(7 + Math.min(10, attackCount * 2), "hồi phục dựa trên sát thương gây ra");
+        if (facts.bondDamageCount >= 2) {
+          const bonus = Math.round(Math.min(8, (facts.bondDamageCount - 1) * 3) * bondConfidence);
+          add(bonus, `${bondSourceLabel} dồn ${facts.bondDamageCount} đòn; Shell Bell hồi theo damage của nhóm`);
+        }
         if (facts.rapidAttacks) add(Math.min(6, facts.rapidAttacks * 3), "hợp move đánh nhiều lần");
         if (facts.hasSustain) add(2, "cộng thêm khả năng trụ lâu cho build có hồi phục");
         break;
       case "choice-band":
         add(11, "tăng sát thương mạnh cho build tập trung tấn công");
-        if (attackCount <= 1) add(12, "move set có một đòn chủ lực, ít cần đổi move");
-        else if (attackCount === 2) add(4, "build có ít đòn tấn công để luân phiên");
-        else add(-8, "build nhiều đòn tấn công sẽ bị hạn chế đổi move");
+        if (attackSlotCount === 0) add(-10, "move set chưa có đòn gây sát thương để tận dụng Choice Band");
+        else if (attackSlotCount === 1) add(12, "build tập trung vào một ô tấn công chủ lực");
+        else if (attackSlotCount === 2) add(4, "build chỉ có hai ô tấn công để luân phiên");
+        else add(-8, "nhiều ô tấn công riêng sẽ bị hạn chế đổi move");
+        if (facts.bondDamageCount >= 2 && facts.bondAttackSlotCount === 1) {
+          const bonus = Math.round(6 * bondConfidence);
+          add(bonus, `${bondSourceLabel} gom nhiều đòn vào một ô, giảm nhu cầu đổi move`);
+        }
         if (facts.topLevel >= 3) add(3, "đòn chủ lực đã được nâng cấp");
         break;
       case "life-orb":
         add(10 + Math.min(8, attackCount * 2), "tăng sát thương cho các move gây damage");
+        if (facts.bondDamageCount >= 2) {
+          const bonus = Math.round(5 * bondConfidence);
+          add(bonus, `${bondSourceLabel} có ${facts.bondDamageCount} đòn cùng hưởng tăng sát thương`);
+        }
         if (facts.rapidAttacks) add(Math.min(4, facts.rapidAttacks * 2), "hợp build có đòn đánh liên tục");
         if (strategyIsSurvival) add(-6, "đổi một phần khả năng trụ lâu lấy sát thương");
         if (facts.hasSustain) add(4, "build hiện tại có hồi phục để bù hao HP");
         break;
       case "leftovers":
         add(11, "hồi HP liên tục trong cả lượt");
+        if (facts.bondDamageCount >= 2 && !facts.hasSustain) {
+          add(Math.round(3 * bondConfidence), `${bondSourceLabel} dồn sát thương; hồi HP liên tục giúp tăng độ an toàn`);
+        }
         if (strategyIsSurvival) add(7, "khớp hướng build Sinh tồn");
         if (!facts.hasSustain) add(3, "bổ sung hồi phục cho build chưa có sustain");
         break;
@@ -2228,7 +2315,8 @@
     if (candidate.action === "keep" && state.heldItem && normalize(state.heldItem) === normalize(item.name)) {
       add(1, "giữ item hiện tại, không mất hiệu ứng đang có");
     }
-    return { ...candidate, score: score.value, reasons: score.reasons, recognized: true, itemName: item.name, buildSource: facts.source };
+    const buildSource = facts.bondContextLabel ? `${facts.source} · ${facts.bondContextLabel}` : facts.source;
+    return { ...candidate, score: score.value, reasons: score.reasons, recognized: true, itemName: item.name, buildSource };
   }
 
   function itemCandidateSignature(candidates) {
@@ -2240,7 +2328,7 @@
     if (!ranked.length) {
       const empty = document.createElement("p");
       empty.className = "muted";
-      empty.textContent = isItemVisible ? "Đang chờ nội dung item để xếp hạng." : state.heldItem ? `Item hiện tại: ${state.heldItem}.` : "Khi item xuất hiện, extension sẽ xếp hạng theo Partner và move set.";
+      empty.textContent = isItemVisible ? "Đang chờ nội dung item để xếp hạng." : state.heldItem ? `Item hiện tại: ${state.heldItem}.` : "Khi item xuất hiện, extension sẽ xếp hạng theo Partner, move set và Bond.";
       ui.itemRecommendations.append(empty);
       ui.itemLabel.textContent = state.heldItem || (isItemVisible ? "đang đọc" : "chờ item");
       return;
@@ -2302,15 +2390,15 @@
     renderItemRecommendations(ranked);
     if (pendingItemName || itemManualOverride) return;
     if (!state.autoPickItems) {
-      ui.itemStatus.textContent = "Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.";
+      ui.itemStatus.textContent = `${facts.bondContextLabel ? `Đang đối chiếu ${facts.bondContextLabel}. ` : ""}Tự chọn item đang tắt; extension vẫn xếp hạng để bạn chọn.`;
       return;
     }
     if (candidates.length < 2) {
-      ui.itemStatus.textContent = "Đang chờ đủ lựa chọn item để so sánh.";
+      ui.itemStatus.textContent = `${facts.bondContextLabel ? `Đang đối chiếu ${facts.bondContextLabel}. ` : ""}Đang chờ đủ lựa chọn item để so sánh.`;
       return;
     }
     if (ranked.some((candidate) => !candidate.recognized)) {
-      ui.itemStatus.textContent = "Có item chưa nhận diện; extension tạm dừng tự chọn để tránh bấm nhầm.";
+      ui.itemStatus.textContent = `${facts.bondContextLabel ? `Đang đối chiếu ${facts.bondContextLabel}. ` : ""}Có item chưa nhận diện; extension tạm dừng tự chọn để tránh bấm nhầm.`;
       return;
     }
     const best = ranked[0];

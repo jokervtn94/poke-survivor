@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.16
+# PokéSurvivor Build Assistant 0.3.17
 
 Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và tự build Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải [ZIP v0.3.16](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.16.zip) và giải nén.
+1. Tải [ZIP v0.3.17](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.17.zip) và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -18,7 +18,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Tự chọn trong khoảng điểm gần nhau:** nếu hai lựa chọn dẫn đầu bằng điểm hoặc chênh không quá 6 điểm, extension chọn move sớm nhất trong thứ tự ưu tiên. Thứ tự này lấy từ move set Partner khi bật Auto build, sau đó đến các skill mục tiêu người chơi đã thêm. Nếu không có move ưu tiên trong nhóm điểm gần nhau, extension dùng thẻ được chấm hợp hướng build nhất.
 - **Tự chọn thẻ dẫn điểm:** nếu lựa chọn đầu hơn lựa chọn tiếp theo trên 6 điểm và đạt trên 6 điểm, extension tự chọn thẻ đó sau 750 ms để chờ game mở khóa.
 - **Tự reroll thẻ yếu:** mặc định bật cùng với tự chọn thẻ. Nếu thẻ có điểm cao nhất không vượt ngưỡng 6 điểm, hoặc đang bật Auto build nhưng cả ba thẻ đều không khớp move/thẻ chỉ số cần cho build Partner, extension bấm nút Reroll của game khi nút còn khả dụng rồi chấm lại bộ thẻ mới. Có thể tắt riêng tính năng này. Nếu game không còn lượt reroll, extension quay về quy tắc tự chọn hiện tại.
-- **Gợi ý và tự chọn item:** xếp hạng hai item theo tác dụng, Partner, các move đã học hoặc move set đang theo và hướng build. Ưu tiên sát thương, hồi phục, giảm hồi chiêu, EXP, cơ động hoặc chống chịu theo tình huống; tự chọn item bật mặc định và có thể tắt riêng. Item lạ chưa nhận diện sẽ làm extension dừng click để tránh chọn đoán.
+- **Gợi ý và tự chọn item:** xếp hạng item theo tác dụng, Partner, move set đã học/đang theo, hướng build và Bond. Bond đã ghép được dùng làm dữ liệu chính; nếu bật Auto Bond, lộ trình Bond dự kiến được tính với trọng số thấp hơn cho đến khi game xác nhận ghép. Điểm Choice Band tính theo số ô tấn công thực tế sau khi Bond gom nhiều move vào một ô; Quick Claw, Shell Bell, Life Orb và Leftovers được cộng điểm khi hiệu ứng hỗ trợ nhóm Bond. Build chưa có đòn gây sát thương không được cộng ưu tiên Choice Band. Tự chọn item bật mặc định và có thể tắt riêng; item lạ chưa nhận diện sẽ làm extension dừng click để tránh chọn đoán.
 - **Chấm thẻ nâng cấp/thuộc tính:** Power, Vigor, Reflexes, Armor, Synthesis, Magnet, Sprint và các thẻ hiệu ứng được nhận diện sẽ có điểm nền theo hướng Cân bằng, Tiến hóa, Vật lý, Đặc biệt hoặc Sinh tồn. Thẻ không nhận diện được nhận điểm dự phòng; nếu cả ba lựa chọn đều không có dữ liệu, thứ tự game là tiêu chí cuối.
 - **Gợi ý move set cho Partner:** tự tải khi nhận diện hoặc chọn Pokémon; có thể nhấn **Tải gợi ý** để thử lại. Extension hiển thị tối đa bốn move và thứ tự thẻ tiến hóa từ build tham khảo.
 - **Nạp move mở màn của Partner:** khi thẻ lên cấp xuất hiện, extension đọc move mở màn đã chọn trong dữ liệu game lưu trên trình duyệt, bao gồm move thứ hai đã chọn nếu đã mở khóa. Nếu không đọc được bản lưu, extension dùng move mở màn mặc định theo Pokémon. Move được đánh dấu **Mở màn** và tham gia chấm điểm nâng cấp, gợi ý phối hợp và Bond.
