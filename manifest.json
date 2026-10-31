@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.10",
-  "description": "Nạp move mở màn Partner, tự reroll thẻ yếu, chọn skill, item và Bond theo move set.",
+  "version": "0.3.11",
+  "description": "Nạp move mở màn Partner, tự reroll thẻ yếu, chọn skill và xác nhận Bond theo move set.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [
