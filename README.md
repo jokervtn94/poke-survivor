@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.12
+# PokéSurvivor Build Assistant 0.3.13
 
-Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và lập lộ trình Bond tối đa bốn move. Tác giả: **Jokervtn94**.
+Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, tải move set tham khảo cho Partner, tự chọn thẻ, item và tự build Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải [ZIP v0.3.12](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.12.zip) và giải nén.
+1. Tải [ZIP v0.3.13](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.13.zip) và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.
@@ -24,9 +24,9 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 - **Nạp move mở màn của Partner:** khi thẻ lên cấp xuất hiện, extension đọc move mở màn đã chọn trong dữ liệu game lưu trên trình duyệt, bao gồm move thứ hai đã chọn nếu đã mở khóa. Nếu không đọc được bản lưu, extension dùng move mở màn mặc định theo Pokémon. Move được đánh dấu **Mở màn** và tham gia chấm điểm nâng cấp, gợi ý phối hợp và Bond.
 - **Auto build theo move set:** bật **Tự build theo move set** để ưu tiên các move và thuộc tính trong lộ trình tham khảo khi game đưa thẻ lên cấp. Extension chỉ chọn trong những thẻ game đang đưa ra; không thể tạo thẻ hoặc tự học move không xuất hiện.
 - **Theo dõi skill và Bond:** ghi nhận lựa chọn bằng click hoặc phím `1`–`3`, cho phép nhập move khởi đầu/cấp hiện tại, và theo dõi các nhóm Bond tối đa bốn move.
-- **Lộ trình Bond bốn move:** khi build có đủ bốn move, extension chia thành hai cặp Bond. Cặp mở đầu và cặp tiếp theo được xếp theo tương tác giữa buff phù hợp với Physical/Special, move gây trạng thái cho Hex, khống chế, diện rộng, nhắm mục tiêu và hồi phục; nếu nguồn build nêu cặp ghép, cặp đó được ưu tiên.
-- **Gợi ý ghép nhóm:** đọc nhiều tên move trong cùng thẻ Bond để nhận diện một nhóm đã ghép. Gợi ý có thể ghép hai nhóm đã có, hoặc mở rộng nhóm bằng move lẻ, miễn tổng số không vượt bốn.
-- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Khi hộp thoại Bond hiện ra, extension nhận diện cả prompt chọn move đầu và move ghép, ưu tiên cặp theo lộ trình build, rồi xét các nhóm ghép sẵn đang hiển thị. Nếu game chưa nhận click đầu, extension thử phím số tương ứng một lần; nếu vẫn không chuyển bước, extension báo để người chơi chọn thủ công.
+- **Lộ trình Bond theo luật game:** lần ghép đầu tạo nhóm hai move. Nếu nhóm còn 2–3 move, Bond sau thêm đúng một move lẻ vào nhóm đó; khi không có nhóm dang dở, game ghép hai move lẻ để tạo nhóm mới. Vì vậy, nhóm bốn move được tạo theo chuỗi `2 → 3 → 4`, cần ba lần ghép, không phải hai cặp độc lập. Thứ tự move được xếp theo tương tác giữa sát thương, buff Physical/Special, trạng thái hỗ trợ Hex, khống chế, diện rộng và đòn đánh mục tiêu đơn.
+- **Gợi ý ghép nhóm:** đọc danh tính các move trong thẻ Bond để nhận diện nhóm đã ghép; ưu tiên nhóm 2–3 move đang mở và move kế tiếp trong lộ trình Partner.
+- **Tự chọn Bond:** bật riêng **Tự chọn Bond theo move set**. Ở lần đầu, extension chọn cặp ưu tiên; ở lần sau, chọn nhóm đang mở làm lựa chọn đầu và chọn đúng một move lẻ tiếp theo làm lựa chọn thứ hai. Nếu chưa nhận diện được nhóm hoặc game chưa chuyển bước sau click và phím số dự phòng, extension dừng để tránh chọn cặp không hợp lệ.
 - **Reset lượt:** khi Pokémon bị hạ và game hiện `#scr-over`, xóa skill, Bond, thẻ chỉ số và cấp độ của lượt; giữ lựa chọn Pokémon và hướng build.
 
 ## Cách dùng Auto build
@@ -36,7 +36,7 @@ Khi cài bản mới, nhấn **Reload** ở trang Extensions rồi tải lại t
 3. Khi lần đầu hiện thẻ lên cấp, kiểm tra move mở màn đã được nạp và đánh dấu **Mở màn** trong danh sách skill.
 4. Bật **Tự build theo move set** và giữ **Tự chọn thẻ** bật.
 5. Khi lên cấp, extension reroll nếu điểm cao nhất không quá 6 hoặc không có thẻ nào hỗ trợ lộ trình move set Partner. Khi hết lượt reroll, extension áp dụng quy tắc chọn theo điểm và thứ tự ưu tiên move.
-6. Bật **Tự chọn Bond theo move set** riêng nếu muốn extension tự chọn các cặp/nhóm move game đang đưa ra trong hộp thoại Bond.
+6. Bật **Tự chọn Bond theo move set** riêng. Lần đầu extension ghép hai move ưu tiên; mỗi lần Bond tiếp theo nó chọn nhóm đang mở rồi thêm move kế tiếp theo build.
 7. Khi gặp hộp thoại item, extension tự xếp hạng rồi bấm item có điểm phù hợp cao nhất; tắt **Tự chọn item** nếu muốn tự quyết định.
 
 Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được thêm trước sẽ có ưu tiên trước trong trường hợp gần điểm bằng nhau. Tắt **Tự build theo move set** nếu chỉ muốn xem gợi ý; tắt **Tự chọn thẻ** để không tự bấm.
@@ -46,7 +46,7 @@ Có thể thêm **Skill muốn nhắm tới** thủ công. Các skill được t
 - Move/Pokémon game data lấy từ các trang tham chiếu công khai của [PokéSurvivor](https://pokesurvivor.com/en/).
 - Mô tả và tác dụng item được đối chiếu với [danh sách held item của game](https://pokesurvivor.com/en/items/).
 - Move set tham khảo lấy từ [PokéSurvivor Wiki Builds](https://pokesurvivors.org/builds/). Đây là wiki cộng đồng không chính thức; trang công bố một build mặc định cho mỗi Pokémon theo luật game, không phải xếp hạng lượt chọn phổ biến hay tỷ lệ thắng. Dữ liệu có thể thiếu hoặc đổi định dạng; khi đó extension vẫn hoạt động với gợi ý nội bộ.
-- Trang hướng dẫn chính thức mô tả Bond là các move được kích hoạt cùng lúc trong một ô; do đó heuristic xếp theo tính bổ trợ, không giả định move đánh nối tiếp theo thứ tự. Extension ưu tiên hiệu ứng hỗ trợ nhau như Hex với move gây burn/poison/slow, kết hợp khống chế với sát thương và cân bằng diện rộng với đòn nhắm mục tiêu. Bốn move được chia thành hai cặp gợi ý; khi giao diện game hiển thị nhóm ghép sẵn, extension có thể nhận diện và chọn ghép hai nhóm hoặc thêm move vào nhóm. Giới hạn bốn move phản ánh giới hạn build mà extension đang xử lý; hướng dẫn công khai của game không nêu chi tiết chuỗi ghép bốn move. Nếu game không đưa nhóm hợp lệ lên màn hình, extension không tự tạo được lựa chọn đó.
+- Hướng dẫn chính thức cho biết mỗi lần hạ Legendary sẽ nhận một Bond để ghép hai move vào một ô; mã nguồn game đặt giới hạn một nhóm là bốn move. Game có bốn ô move. Vì vậy trần lý thuyết là 16 move trong bốn nhóm, tương đương 12 lần ghép nếu liên tục lấp lại các ô được giải phóng; đây là phép suy ra từ các giới hạn trên, không phải số Bond cố định được cấp mỗi lượt. Luật chọn tiếp được phản ánh trong extension: phát triển nhóm 2–3 move bằng cách thêm một move lẻ; nếu không có nhóm dang dở thì ghép hai move lẻ. Build tham khảo cho Partner chứa tối đa bốn move mục tiêu nên extension xếp một chuỗi ghép cho nhóm đó, không chia thành hai cặp. Các move trong nhóm cùng kích hoạt; thứ tự hiển thị chỉ là thứ tự game hỏi người chơi chọn.
 - [Tin cập nhật game ngày 27-10-2026](https://pokesurvivor.com/en/news/) ghi nhận và sửa lỗi trên điện thoại khi bước chọn move thứ hai của Bond có thể nhận nhầm thẻ nằm dưới ngón tay. Vì vậy, extension đọc danh tính move trong từng thẻ, theo dõi prompt đổi bước và chỉ ghi nhận Bond sau khi hộp thoại đóng.
 - Điểm là heuristic minh bạch, không đọc HP, đối thủ, thời tiết hoặc trạng thái ẩn trong game. Tên thẻ chưa có trong move catalog có thể chỉ được xếp theo loại hiệu ứng và hướng build.
 - Điểm item là heuristic theo mô tả item công khai, trạng thái build extension đang biết và hướng build; extension không đọc HP hoặc trạng thái trận đấu ẩn để dự báo item nào chắc chắn tốt nhất.

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.12",
-  "description": "Xây build theo Partner, tự reroll thẻ yếu, và chọn Bond theo tương tác tối đa bốn move.",
+  "version": "0.3.13",
+  "description": "Xây build theo Partner và tự chọn Bond đúng thứ tự game cho phép, tối đa bốn move mỗi nhóm.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
   "host_permissions": [

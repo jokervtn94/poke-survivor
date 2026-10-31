@@ -5,6 +5,7 @@
 
   const STATE_KEY = "psba_player_state_v1";
   const MAX_MOVE_SLOTS = 4;
+  const MAX_BOND_GROUP_SIZE = 4;
   const MAX_MOVES_WITH_BONDS = 16;
   const AUTO_PICK_MIN_SCORE = 6;
   const AUTO_PICK_NEAR_TIE_GAP = 6;
@@ -275,7 +276,7 @@
     bondManualOverride = false;
     persistState();
     ui.bondStatus.textContent = state.autoBondFromMoveset
-      ? "Đang chờ Bond; ưu tiên cặp mở đầu và nhóm bổ trợ tiếp theo trong build Partner."
+      ? "Đang chờ Bond; ghép cặp mở đầu rồi thêm từng move theo thứ tự build Partner."
       : "Tắt tự chọn Bond; bạn vẫn có thể xem gợi ý và ghép thủ công.";
     updateBondState();
   });
@@ -393,7 +394,7 @@
                 ? value.partnerBuild.cardPriority.filter((item) => typeof item === "string").slice(0, 8)
                 : [],
               bondGroups: Array.isArray(value.partnerBuild.bondGroups)
-                ? value.partnerBuild.bondGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, 4)
+                ? value.partnerBuild.bondGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_BOND_GROUP_SIZE) : []).filter((group) => group.length >= 2).slice(0, 4)
                 : []
             }
           : null;
@@ -407,7 +408,7 @@
             }))
           : [];
         state.fusedGroups = Array.isArray(value.fusedGroups)
-          ? value.fusedGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_MOVE_SLOTS) : []).filter((group) => group.length >= 2).slice(0, MAX_MOVE_SLOTS)
+          ? value.fusedGroups.map((group) => Array.isArray(group) ? group.filter((name) => typeof name === "string").slice(0, MAX_BOND_GROUP_SIZE) : []).filter((group) => group.length >= 2).slice(0, MAX_MOVE_SLOTS)
           : [];
         state.statPicks = Array.isArray(value.statPicks) ? value.statPicks.filter((item) => typeof item === "string").slice(-12) : [];
         state.heldItem = typeof value.heldItem === "string" ? value.heldItem : "";
@@ -844,7 +845,7 @@
       const bond = document.createElement("p");
       bond.className = "muted moveset-source";
       bond.textContent = suggestedBond.names.length >= 4
-        ? `Gợi ý 4 move: Bond 1 ${suggestedBond.firstPair.join(" + ")} · Bond 2 ${suggestedBond.secondPair.join(" + ")} · ghép nhóm theo các lựa chọn game hiển thị.`
+        ? `Lộ trình Bond: ${suggestedBond.firstPair.join(" + ")} → thêm ${suggestedBond.additions.join(" → thêm ")} (mỗi Bond sau thêm một move vào nhóm).`
         : `Bond ưu tiên: ${suggestedBond.names.join(" + ")} · ${suggestedBond.source === "guide" ? "theo hướng dẫn build" : "xếp theo phối hợp và thứ tự move"}`;
       ui.moveset.append(bond);
     }
@@ -867,8 +868,8 @@
       ? "Đang ưu tiên move và thẻ theo move set này."
       : "Bật tự build để ưu tiên move set này khi chọn thẻ.";
     ui.bondStatus.textContent = state.autoBondFromMoveset
-      ? "Đang chờ Bond; sẽ ưu tiên cặp mở đầu và các move còn lại trong lộ trình build."
-      : "Bật để tự chọn Bond theo lộ trình move set Partner, tối đa 4 move trong một nhóm.";
+      ? "Đang chờ Bond; sẽ ưu tiên nhóm đang mở rồi thêm move kế tiếp trong lộ trình build."
+      : "Bật để tự chọn Bond theo thứ tự game cho phép, tối đa 4 move trong một nhóm.";
   }
 
   function renderTypes() {
@@ -1622,44 +1623,6 @@
       source = "guide";
     }
 
-    if (moves.length === MAX_MOVE_SLOTS) {
-      let orderedPairs = null;
-      let bestPartitionScore = -Infinity;
-      if (selected.length === 2) {
-        const secondPair = moves.filter((item) => !selected.some((chosen) => normalize(chosen.move.name) === normalize(item.move.name)));
-        if (secondPair.length === 2) orderedPairs = [selected, secondPair];
-      } else {
-        const partitions = [
-          [[0, 1], [2, 3]],
-          [[0, 2], [1, 3]],
-          [[0, 3], [1, 2]]
-        ];
-        for (const partition of partitions) {
-          const pairs = partition.map((indexes) => indexes.map((index) => moves[index]));
-          const pairScores = pairs.map((pair) => fusionPairScore(pair[0].move, pair[1].move).score);
-          const orderBonus = pairs.reduce((total, pair) => total + pair.reduce((sum, item) => sum + Math.max(0, MAX_MOVE_SLOTS - item.index) * 2, 0), 0);
-          const partitionScore = pairScores[0] + pairScores[1] + orderBonus;
-          if (partitionScore > bestPartitionScore) {
-            bestPartitionScore = partitionScore;
-            orderedPairs = pairs;
-            if (pairScores[1] > pairScores[0]) orderedPairs = [pairs[1], pairs[0]];
-          }
-        }
-      }
-      if (orderedPairs?.length === 2 && orderedPairs.every((pair) => pair.length === 2)) {
-        const names = orderedPairs.flat().map((item) => item.move.name);
-        const groupScore = fusionGroupScore(moves.map((item) => item.move));
-        return {
-          names,
-          firstPair: names.slice(0, 2),
-          secondPair: names.slice(2, 4),
-          source,
-          score: groupScore.score,
-          reasons: groupScore.reasons
-        };
-      }
-    }
-
     if (selected.length < 2) {
       let best = null;
       for (let i = 0; i < moves.length; i += 1) {
@@ -1697,7 +1660,7 @@
     return {
       names,
       firstPair: names.slice(0, 2),
-      secondPair: names.slice(2, 4),
+      additions: names.slice(2),
       source,
       score: groupScore.score,
       reasons: groupScore.reasons
@@ -1769,7 +1732,7 @@
 
   function chooseBondPlan(candidates) {
     const plan = getPartnerBuildBondPlan();
-    const openGroups = state.fusedGroups.filter((group) => group.length >= 2 && group.length < MAX_MOVE_SLOTS);
+    const openGroups = state.fusedGroups.filter((group) => group.length >= 2 && group.length < MAX_BOND_GROUP_SIZE);
     const groupedCandidates = candidates
       .filter((candidate) => candidateMoveNames(candidate).length >= 2)
       .map((candidate) => {
@@ -1777,17 +1740,24 @@
         const tracked = openGroups.find((group) => sameMoveGroup(group, names));
         const plannedCount = names.filter((name) => plan?.names.some((item) => normalize(item) === normalize(name))).length;
         const synergy = fusionGroupScore(names.map(getMoveData).filter(Boolean));
-        return { candidate, names, tracked, score: (tracked ? 100 : 0) + plannedCount * 20 + synergy.score };
+        return { candidate, names, tracked, score: (tracked ? 1000 : 0) + plannedCount * 20 + synergy.score };
       })
-      .filter((item) => item.names.length < MAX_MOVE_SLOTS)
+      .filter((item) => item.names.length < MAX_BOND_GROUP_SIZE)
       .sort((a, b) => b.score - a.score);
     if (groupedCandidates.length) {
       const bestGroup = groupedCandidates[0];
       return { candidate: bestGroup.candidate, names: bestGroup.names, source: bestGroup.tracked ? "run" : plan?.source || "moveset" };
     }
 
+    // A pending group must be extended before the game can start another pair.
+    // If its card was not recognized, wait instead of suggesting an illegal pair.
+    if (openGroups.length) return null;
+
     const preferredPair = plan?.firstPair || getPartnerBuildBondPair()?.names || [];
-    const preferredFirst = preferredPair.find((name) => bondCandidateForName(candidates, name));
+    const preferredFirst = preferredPair.find((name) => {
+      const candidate = bondCandidateForName(candidates, name);
+      return candidate && candidateMoveNames(candidate).length === 1;
+    });
     if (preferredFirst) {
       const second = preferredPair.find((name) => normalize(name) !== normalize(preferredFirst));
       return {
@@ -1799,12 +1769,14 @@
 
     let best = null;
     for (let i = 0; i < candidates.length; i += 1) {
+      if (candidateMoveNames(candidates[i]).length !== 1) continue;
       for (let j = i + 1; j < candidates.length; j += 1) {
+        if (candidateMoveNames(candidates[j]).length !== 1) continue;
         const first = candidateMoveNames(candidates[i]);
         const second = candidateMoveNames(candidates[j]);
         if (!first.length || !second.length || first.some((name) => second.some((item) => normalize(item) === normalize(name)))) continue;
         const names = [...first, ...second];
-        if (names.length > MAX_MOVE_SLOTS) continue;
+        if (names.length > MAX_BOND_GROUP_SIZE) continue;
         const score = fusionGroupScore(names.map(getMoveData).filter(Boolean)).score
           + names.reduce((sum, name) => sum + bondPriority(name), 0);
         if (!best || score > best.score) best = { candidate: candidates[i], names, source: "moveset", score };
@@ -1819,15 +1791,16 @@
     const plan = getPartnerBuildBondPlan();
     const preferredNext = plan?.names.find((name) => !normalizedFirst.has(normalize(name)));
     const explicitPairs = state.partnerBuild?.bondGroups || [];
-    const firstMoves = selectedNames.map(getMoveData).filter(Boolean);
     const ranked = candidates
       .map((candidate) => {
         const names = candidateMoveNames(candidate);
-        if (!names.length || names.some((name) => normalizedFirst.has(normalize(name)))) return null;
+        // Every second choice is one loose move: either it completes a new
+        // pair or adds exactly one move to the existing Bond group.
+        if (names.length !== 1 || names.some((name) => normalizedFirst.has(normalize(name)))) return null;
         const mergedNames = [...selectedNames, ...names].filter((name, index, list) =>
           list.findIndex((item) => normalize(item) === normalize(name)) === index
         );
-        if (mergedNames.length > MAX_MOVE_SLOTS) return null;
+        if (mergedNames.length > MAX_BOND_GROUP_SIZE) return null;
         const groupScore = fusionGroupScore(mergedNames.map(getMoveData).filter(Boolean)).score;
         const priority = names.reduce((sum, name) => {
           const index = plan?.names.findIndex((item) => normalize(item) === normalize(name)) ?? -1;
@@ -1845,7 +1818,6 @@
       .sort((a, b) => b.score - a.score);
 
     if (!ranked.length) return null;
-    if (!firstMoves.length && selectedNames.length === 1) return null;
     return ranked[0].candidate;
   }
 
@@ -1921,8 +1893,8 @@
       }
       const signature = bondSelectionSignature(phase, candidates);
       queueBondChoice(candidate, phase, signature, plan?.source === "guide"
-        ? `theo cặp build: ${formatBondNames(plan.names)}`
-        : `theo lộ trình 4 move: ${formatBondNames(plan?.names || candidateMoveNames(candidate))}`);
+        ? `theo thứ tự build: ${formatBondNames(plan.names)}`
+        : `theo lộ trình Bond: ${formatBondNames(plan?.names || candidateMoveNames(candidate))}`);
       return;
     }
 
@@ -2350,8 +2322,8 @@
     const normalizedNames = names.map(normalize);
     const involved = state.fusedGroups.filter((group) => group.some((name) => normalizedNames.includes(normalize(name))));
     const merged = [...new Set([...involved.flat(), ...names].map((name) => moveData.find((move) => normalize(move.name) === normalize(name))?.name || name))];
-    if (merged.length > MAX_MOVE_SLOTS) {
-      ui.autoStatus.textContent = "Một nhóm Bond tối đa 4 skill.";
+    if (merged.length > MAX_BOND_GROUP_SIZE) {
+      ui.autoStatus.textContent = "Một nhóm Bond tối đa 4 move.";
       return;
     }
     state.fusedGroups = state.fusedGroups.filter((group) => !involved.includes(group));
@@ -2373,9 +2345,8 @@
       title.className = "recommendation-head";
       const names = document.createElement("strong");
       const firstPair = partnerPlan.firstPair.join(" + ");
-      const secondPair = partnerPlan.secondPair.join(" + ");
       names.textContent = partnerPlan.names.length >= 4
-        ? `Lộ trình 4 move: ${firstPair} → ${secondPair}`
+        ? `Lộ trình Bond: ${firstPair} → thêm ${partnerPlan.additions.join(" → thêm ")}`
         : `Bond ưu tiên: ${partnerPlan.names.join(" + ")}`;
       const source = document.createElement("span");
       source.className = "score";
@@ -2386,8 +2357,8 @@
       const learnedCount = partnerPlan.names.filter((name) => learned.has(normalize(name))).length;
       const reasonText = partnerPlan.reasons.slice(0, 2).join(" · ");
       reason.textContent = partnerPlan.source === "guide"
-        ? `Nguồn build nêu cặp mở đầu; đã có ${learnedCount}/${partnerPlan.names.length} move trong lượt.${reasonText ? ` ${reasonText}.` : ""}`
-        : `Xếp theo tương tác giữa nhóm sát thương, khống chế, trạng thái và thứ tự build; đã có ${learnedCount}/${partnerPlan.names.length}.${reasonText ? ` ${reasonText}.` : ""}`;
+        ? `Ghép cặp mở đầu, rồi mỗi Bond thêm một move vào nhóm đang mở; đã có ${learnedCount}/${partnerPlan.names.length} move trong lượt.${reasonText ? ` ${reasonText}.` : ""}`
+        : `Xếp theo tương tác giữa sát thương, khống chế, trạng thái và thứ tự build; mỗi Bond sau thêm một move vào nhóm; đã có ${learnedCount}/${partnerPlan.names.length}.${reasonText ? ` ${reasonText}.` : ""}`;
       row.append(title, reason);
       ui.fusions.append(row);
     }
@@ -2400,41 +2371,35 @@
     }
     const groupedNames = new Set(state.fusedGroups.flat().map(normalize));
     const loose = moves.filter((move) => !groupedNames.has(normalize(move.name)));
-    const growingGroup = state.fusedGroups.find((group) => group.length > 1 && group.length < MAX_MOVE_SLOTS);
+    const growingGroup = state.fusedGroups.find((group) => group.length > 1 && group.length < MAX_BOND_GROUP_SIZE);
     const options = [];
     const addOption = (names, label) => {
       const uniqueNames = [...new Set(names)];
       const uniqueKey = uniqueNames.map(normalize).sort().join("|");
-      if (uniqueNames.length < 2 || uniqueNames.length > MAX_MOVE_SLOTS
+      if (uniqueNames.length < 2 || uniqueNames.length > MAX_BOND_GROUP_SIZE
         || options.some((option) => option.key === uniqueKey)) return;
       const result = fusionGroupScore(uniqueNames.map(getMoveData).filter(Boolean));
       options.push({ key: uniqueKey, names: uniqueNames, label, ...result });
     };
-    for (let i = 0; i < state.fusedGroups.length; i += 1) {
-      for (let j = i + 1; j < state.fusedGroups.length; j += 1) {
-        const left = state.fusedGroups[i];
-        const right = state.fusedGroups[j];
-        addOption([...left, ...right], `${left.join(" + ")} ↔ ${right.join(" + ")}`);
-      }
+    if (growingGroup) {
       for (const add of loose) {
-        addOption([...state.fusedGroups[i], add.name], `${state.fusedGroups[i].join(" + ")} + ${add.name}`);
+        addOption([...growingGroup, add.name], `${growingGroup.join(" + ")} + ${add.name}`);
       }
-    }
-    for (let i = 0; i < loose.length; i += 1) {
-      for (let j = i + 1; j < loose.length; j += 1) {
-        addOption([loose[i].name, loose[j].name], `${loose[i].name} + ${loose[j].name}`);
+    } else {
+      for (let i = 0; i < loose.length; i += 1) {
+        for (let j = i + 1; j < loose.length; j += 1) {
+          addOption([loose[i].name, loose[j].name], `${loose[i].name} + ${loose[j].name}`);
+        }
       }
     }
     options.sort((a, b) => b.score - a.score);
     if (!options.length) {
       const message = document.createElement("p");
       message.className = "muted";
-      message.textContent = state.fusedGroups.some((group) => group.length >= MAX_MOVE_SLOTS) && !loose.length
+      message.textContent = state.fusedGroups.some((group) => group.length >= MAX_BOND_GROUP_SIZE) && !loose.length
         ? "Nhóm Bond đã đạt giới hạn 4 move."
-        : state.fusedGroups.length > 1
-          ? "Chưa có cặp nhóm nào có thể ghép mà không vượt quá 4 move."
         : growingGroup
-          ? "Nhóm Bond có thể ghép thêm move lẻ hoặc ghép với một nhóm Bond khác."
+          ? "Nhóm Bond đang mở; cần thêm một move lẻ để ghép tiếp."
           : loose.length < 2
             ? "Cần thêm move chưa ghép để dùng Bond tiếp theo."
             : "Các skill đã được đánh dấu trong nhóm Bond.";
