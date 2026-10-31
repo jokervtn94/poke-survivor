@@ -12,6 +12,7 @@
   const AUTO_REROLL_DELAY_MS = 650;
   const AUTO_REROLL_VERIFY_MS = 700;
   const AUTO_BOND_DELAY_MS = 500;
+  const AUTO_BOND_SHORTCUT_FALLBACK_MS = 450;
   const AUTO_ITEM_DELAY_MS = 600;
   const EVO_STATS = ["Power", "Vigor", "Reflexes", "Armor", "Synthesis", "Magnet", "Sprint"];
   const START_MOVE_BY_TYPE = {
@@ -1586,8 +1587,15 @@
 
   function bondPhase() {
     const prompt = normalize(document.querySelector("#bond-sub")?.textContent || "");
-    if (/\b(first|1st)\b/.test(prompt)) return "first";
-    if (/\b(second|2nd|another)\b/.test(prompt)) return "second";
+    if (/\b(second|2nd|another)\b/.test(prompt)
+      || /\bwhich move joins\b/.test(prompt)
+      || /\bwhich move do you bond\b/.test(prompt)
+      || /\bchoose which move\b/.test(prompt)
+      || /\bmove joins\b/.test(prompt)
+      || /que movimiento.*(se une|unir|vincul)/.test(prompt)) return "second";
+    const backButton = document.querySelector("#bond-back");
+    if (backButton && !backButton.classList.contains("hidden") && getComputedStyle(backButton).display !== "none") return "second";
+    if (/\b(first|1st)\b/.test(prompt) || /primer movimiento/.test(prompt)) return "first";
     return "unknown";
   }
 
@@ -1657,6 +1665,19 @@
 
   function bondSelectionSignature(phase, candidates) {
     return `${phase}|${candidates.map((candidate) => normalize(candidate.move.name)).join(",")}`;
+  }
+
+  function pressBondCardShortcut(moveName) {
+    const index = bondCandidates().findIndex((candidate) => normalize(candidate.move.name) === normalize(moveName));
+    if (index < 0 || index >= 4) return false;
+    const key = String(index + 1);
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key,
+      code: `Digit${key}`,
+      bubbles: true,
+      cancelable: true
+    }));
+    return true;
   }
 
   function updateBondState() {
@@ -1756,6 +1777,13 @@
       bondPendingStartedAt = Date.now();
       current.element.click();
       ui.bondStatus.textContent = `Đã bấm ${current.move.name}; đang chờ game xác nhận bước Bond.`;
+      if (phase === "first") {
+        setTimeout(() => {
+          if (!state.autoBondFromMoveset || bondManualOverride || !bondScreenVisible() || bondPhase() !== "first") return;
+          const shortcutSent = pressBondCardShortcut(current.move.name);
+          if (shortcutSent) ui.bondStatus.textContent = `Click chưa chuyển bước; đã gửi phím chọn ${current.move.name} để xác nhận move đầu.`;
+        }, AUTO_BOND_SHORTCUT_FALLBACK_MS);
+      }
       if (bondWatchdogTimer) clearTimeout(bondWatchdogTimer);
       bondWatchdogTimer = setTimeout(() => {
         bondWatchdogTimer = null;
@@ -1763,9 +1791,11 @@
         const stillSamePhase = bondPhase() === phase;
         if (stillSamePhase && phase === "first" && normalize(bondPendingFirstMove) === normalize(current.move.name)) {
           bondPendingFirstMove = "";
-          ui.bondStatus.textContent = `Game chưa chuyển sang bước chọn thứ hai sau khi bấm ${current.move.name}; hãy chọn thủ công.`;
+          bondAttemptSignature = "";
+          ui.bondStatus.textContent = `Game chưa nhận move đầu ${current.move.name} sau click và phím tắt; hãy chọn thủ công.`;
         } else if (stillSamePhase && phase === "second" && normalize(bondPendingSecondMove) === normalize(current.move.name)) {
           bondPendingSecondMove = "";
+          bondAttemptSignature = "";
           ui.bondStatus.textContent = `Game chưa xác nhận move ${current.move.name}; hãy chọn thủ công.`;
         }
       }, 1800);
