@@ -257,9 +257,9 @@
   };
 
   shadow.querySelector("#psba-minimize").addEventListener("click", () => setPanelOpen(false));
-  ui.buildBack.addEventListener("click", closeBuildConfigurator);
+  ui.buildBack.addEventListener("click", returnToBuildAssistant);
   ui.buildClose.addEventListener("click", () => {
-    closeBuildConfigurator();
+    returnToBuildAssistant();
     setPanelOpen(false);
   });
   ui.fab.addEventListener("click", () => setPanelOpen(true));
@@ -1069,20 +1069,21 @@
   function openBuildConfigurator() {
     const eligibleMoves = eligiblePartnerMoves();
     if (!eligibleMoves.length) return;
-    const configured = configuredBuildForCurrentPokemon();
-    const availableByName = new Map(eligibleMoves.map((move) => [normalize(move.name), move.name]));
-    const startingMoves = partnerStartingMoves(currentPokemon())
-      .map((move) => availableByName.get(normalize(move.name)))
-      .filter(Boolean)
-      .slice(0, MAX_MOVE_SLOTS);
-    const defaultMoves = configured ? [...configured.moves] : startingMoves;
-    buildConfigDraft = {
-      pokemon: state.pokemon,
-      moves: defaultMoves,
-      firstPair: configured
-        ? [...configured.firstPair]
-        : startingMoves.length >= 2 ? startingMoves.slice(0, 2) : []
-    };
+    if (!buildConfigDraft || normalize(buildConfigDraft.pokemon) !== normalize(state.pokemon)) {
+      const configured = configuredBuildForCurrentPokemon();
+      const availableByName = new Map(eligibleMoves.map((move) => [normalize(move.name), move.name]));
+      const startingMoves = partnerStartingMoves(currentPokemon())
+        .map((move) => availableByName.get(normalize(move.name)))
+        .filter(Boolean)
+        .slice(0, MAX_MOVE_SLOTS);
+      buildConfigDraft = {
+        pokemon: state.pokemon,
+        moves: configured ? [...configured.moves] : startingMoves,
+        firstPair: configured
+          ? [...configured.firstPair]
+          : startingMoves.length >= 2 ? startingMoves.slice(0, 2) : []
+      };
+    }
     buildConfigFeedback = "";
     ui.buildPartner.textContent = `${state.pokemon} · ${currentPokemon()?.types?.join(" / ") || "Partner"}`;
     ui.mainView.hidden = true;
@@ -1094,6 +1095,11 @@
 
   function closeBuildConfigurator() {
     buildConfigDraft = null;
+    buildConfigFeedback = "";
+    returnToBuildAssistant();
+  }
+
+  function returnToBuildAssistant() {
     buildConfigFeedback = "";
     ui.buildScreen.hidden = true;
     ui.mainView.hidden = false;

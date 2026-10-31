@@ -1,10 +1,10 @@
-# PokéSurvivor Build Assistant 0.3.20
+# PokéSurvivor Build Assistant 0.3.21
 
 Extension Chrome/Edge Manifest V3 phát triển tiếp từ nền ổn định v0.3.2. Extension theo dõi lượt chơi, gợi ý thẻ theo Pokémon và skill đã học, cho phép tạo move set riêng từ danh sách move Partner có thể học, rồi tự chọn thẻ và ghép Bond theo cấu hình đã xác nhận. Build cộng đồng vẫn có thể tải riêng để tham khảo. Extension cũng tự chọn item và ghép Bond theo đúng thứ tự game cho phép. Một nhóm Bond có thể chứa tối đa bốn move. Tác giả: **Jokervtn94**.
 
 ## Cài đặt
 
-1. Tải [ZIP v0.3.20](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.20.zip) và giải nén.
+1. Tải [ZIP v0.3.21](https://github.com/jokervtn94/poke-survivor/raw/refs/heads/main/releases/PokeSurvivor-Build-Assistant-v0.3.21.zip) và giải nén.
 2. Mở `chrome://extensions` trên Chrome hoặc `edge://extensions` trên Edge.
 3. Bật **Developer mode**.
 4. Chọn **Load unpacked** và chọn thư mục có `manifest.json`.

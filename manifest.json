@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PokéSurvivor Build Assistant",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "description": "Màn hình riêng để tạo move set cho Partner, rồi tự chọn thẻ và ghép Bond theo cấu hình đã xác nhận.",
   "author": "Jokervtn94",
   "permissions": ["storage"],
